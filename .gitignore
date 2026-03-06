@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Soren data
+data/soren.db
+data/logs/
+data/screenshots/
+data/reports/
+data/*.json
+
+# Environment (copy from .env.example)
+.env
+
+# Credentials (NEVER commit)
+config/.credentials.enc
+config/credentials.json
+
+# UV
+uv.lock
+
+# OS
+.DS_Store

@@ -1,0 +1,152 @@
+{
+  "machine_total_gb": 36.0,
+  "snapshots": [
+    {
+      "timestamp": 1771942562.241568,
+      "label": "01_baseline",
+      "psutil_percent": 68.5,
+      "psutil_used_gb": 15.06,
+      "psutil_available_gb": 11.34,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1087969,
+      "ollama_loaded_models": [],
+      "ollama_total_vram_gb": 0.0
+    },
+    {
+      "timestamp": 1771942569.573741,
+      "label": "gemma3:12b_loaded",
+      "psutil_percent": 87.6,
+      "psutil_used_gb": 18.46,
+      "psutil_available_gb": 4.47,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088161,
+      "ollama_loaded_models": [
+        {
+          "name": "gemma3:12b",
+          "size_vram_gb": 11.0
+        }
+      ],
+      "ollama_total_vram_gb": 11.0
+    },
+    {
+      "timestamp": 1771942578.241842,
+      "label": "qwen3-vl_loaded",
+      "psutil_percent": 87.6,
+      "psutil_used_gb": 18.93,
+      "psutil_available_gb": 4.46,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088210,
+      "ollama_loaded_models": [
+        {
+          "name": "qwen3-vl:8b",
+          "size_vram_gb": 10.89
+        }
+      ],
+      "ollama_total_vram_gb": 10.89
+    },
+    {
+      "timestamp": 1771942580.269532,
+      "label": "gemma3_4b_loaded",
+      "psutil_percent": 56.8,
+      "psutil_used_gb": 8.22,
+      "psutil_available_gb": 15.55,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088210,
+      "ollama_loaded_models": [],
+      "ollama_total_vram_gb": 0.0
+    },
+    {
+      "timestamp": 1771942591.242943,
+      "label": "swap_gemma3:12b_to_qwen3-vl:8b",
+      "psutil_percent": 88.3,
+      "psutil_used_gb": 19.62,
+      "psutil_available_gb": 4.22,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088756,
+      "ollama_loaded_models": [
+        {
+          "name": "qwen3-vl:8b",
+          "size_vram_gb": 10.89
+        }
+      ],
+      "ollama_total_vram_gb": 10.89
+    },
+    {
+      "timestamp": 1771942603.723952,
+      "label": "swap_qwen3-vl:8b_to_gemma3:12b",
+      "psutil_percent": 85.2,
+      "psutil_used_gb": 19.21,
+      "psutil_available_gb": 5.32,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088842,
+      "ollama_loaded_models": [
+        {
+          "name": "gemma3:12b",
+          "size_vram_gb": 11.0
+        }
+      ],
+      "ollama_total_vram_gb": 11.0
+    },
+    {
+      "timestamp": 1771942609.540682,
+      "label": "swap_gemma3:12b_to_gemma3:4b",
+      "psutil_percent": 85.1,
+      "psutil_used_gb": 19.29,
+      "psutil_available_gb": 5.36,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088887,
+      "ollama_loaded_models": [
+        {
+          "name": "gemma3:12b",
+          "size_vram_gb": 11.0
+        }
+      ],
+      "ollama_total_vram_gb": 11.0
+    },
+    {
+      "timestamp": 1771942614.40319,
+      "label": "05_peak_gemma12b",
+      "psutil_percent": 85.4,
+      "psutil_used_gb": 19.55,
+      "psutil_available_gb": 5.27,
+      "memory_pressure": "normal",
+      "vm_stat_pageouts": 1088918,
+      "ollama_loaded_models": [
+        {
+          "name": "gemma3:12b",
+          "size_vram_gb": 11.0
+        }
+      ],
+      "ollama_total_vram_gb": 11.0
+    }
+  ],
+  "component_costs": {
+    "gemma3_12b_delta_gb": 3.4,
+    "gemma3_12b_load_seconds": 7.31,
+    "gemma3_12b_ollama_vram_gb": 11.0,
+    "qwen3_vl_delta_gb": 10.65,
+    "qwen3_vl_load_seconds": 6.65,
+    "qwen3_vl_ollama_vram_gb": 10.89,
+    "gemma3_4b_delta_gb": 0.0,
+    "gemma3_4b_load_seconds": 0.01,
+    "gemma3_4b_ollama_vram_gb": 0.0
+  },
+  "swap_timings": [
+    {
+      "from": "gemma3:12b",
+      "to": "qwen3-vl:8b",
+      "seconds": 6.12
+    },
+    {
+      "from": "qwen3-vl:8b",
+      "to": "gemma3:12b",
+      "seconds": 3.86
+    },
+    {
+      "from": "gemma3:12b",
+      "to": "gemma3:4b",
+      "seconds": 0.02
+    }
+  ],
+  "verdict": "PASS: 27.6 GB estimated peak (incl. 8 GB VM) / 36.0 GB total (8.4 GB headroom)"
+}

@@ -1,0 +1,198 @@
+"""TaskExecutor — drives CUA ComputerAgent through task execution with step budget and reporting."""
+
+from __future__ import annotations
+
+import time
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from soren.models.persona import Persona
+from soren.models.session import TaskResult
+from soren.models.task import Task
+from soren.services.persona_context import PersonaContext
+
+if TYPE_CHECKING:
+    from soren.services.config_loader import SorenSettings
+    from soren.services.llm_service import LLMService
+    from soren.services.vm_manager import VMManager
+
+DEFAULT_STEP_BUDGET = 50
+DEFAULT_VLM_MODEL = "mlx/mlx-community/UI-TARS-1.5-7B-6bit"
+
+
+class TaskExecutor:
+    """Wraps CUA ComputerAgent with step budget, logging, and TaskResult."""
+
+    def __init__(
+        self,
+        settings: SorenSettings,
+        llm: LLMService,
+        vm: VMManager,
+        *,
+        step_budget: int = DEFAULT_STEP_BUDGET,
+        vlm_model: str | None = None,
+        screenshot_dir: Path | None = None,
+    ) -> None:
+        self._settings = settings
+        self._llm = llm
+        self._vm = vm
+        self._step_budget = step_budget
+        vlm_config = getattr(settings, "vlm", None)
+        self._vlm_model = vlm_model or (vlm_config.full_model_str() if vlm_config else DEFAULT_VLM_MODEL)
+        self._screenshot_dir = screenshot_dir or Path("data/screenshots")
+
+    async def execute(
+        self,
+        task: Task,
+        persona: Persona,
+        computer: Any,
+        memories: list[str] | None = None,
+    ) -> TaskResult:
+        """Execute task via ComputerAgent. Returns TaskResult with success, steps, duration."""
+        from soren.patches import apply_all
+
+        apply_all()
+
+        from agent import ComputerAgent
+
+        started = time.perf_counter()
+        step_log: list[dict[str, Any]] = []
+        screenshots_captured: list[str] = []
+        steps_taken = 0
+        error_msg: str | None = None
+        success = False
+
+        persona_context = PersonaContext.build(
+            persona, task, memories=memories, step_budget=self._step_budget
+        )
+        messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
+
+        self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            agent = ComputerAgent(
+                model=self._vlm_model,
+                tools=[computer],
+                instructions=persona_context,
+                screenshot_delay=0.5,
+                only_n_most_recent_images=5,
+            )
+
+            last_output: list = []
+            async for result in agent.run(messages):
+                steps_taken += 1
+                output = result.get("output", [])
+                last_output = output
+                for item in output:
+                    step_entry = self._parse_output_item(item, task.id, steps_taken)
+                    if step_entry:
+                        step_log.append(step_entry)
+                    screenshot_path = self._extract_screenshot(item, task.id, steps_taken)
+                    if screenshot_path:
+                        screenshots_captured.append(screenshot_path)
+
+                if steps_taken >= self._step_budget:
+                    error_msg = f"Step budget ({self._step_budget}) exceeded"
+                    break
+
+                if self._is_completion_message(output):
+                    success = True
+                    break
+
+            if not success and not error_msg and steps_taken > 0:
+                success = self._has_assistant_final(last_output)
+
+        except Exception as e:
+            error_msg = str(e)
+            success = False
+
+        duration = time.perf_counter() - started
+        return TaskResult(
+            success=success,
+            steps_taken=steps_taken,
+            step_log=step_log,
+            duration_seconds=duration,
+            error=error_msg,
+        )
+
+    def _parse_output_item(self, item: dict[str, Any], task_id: str, step: int) -> dict[str, Any] | None:
+        """Extract reasoning, action type, coordinates from agent output item."""
+        if not isinstance(item, dict):
+            return None
+        kind = item.get("type") or item.get("role")
+        if kind == "computer_call":
+            call = item.get("call", item)
+            action = call.get("action", {}) if isinstance(call, dict) else {}
+            action_type = action.get("type", "unknown")
+            action_data = action if isinstance(action, dict) else {}
+            return {
+                "step": step,
+                "action_type": action_type,
+                "action_data": action_data,
+                "vlm_reasoning": item.get("summary", item.get("reasoning")),
+            }
+        if kind == "message" and item.get("role") == "assistant":
+            content = item.get("content", "")
+            if isinstance(content, list):
+                text_parts = [
+                    p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "output_text"
+                ]
+                content = " ".join(text_parts)
+            return {
+                "step": step,
+                "action_type": "message",
+                "action_data": {"content": str(content)},
+                "vlm_reasoning": str(content)[:500],
+            }
+        return None
+
+    def _extract_screenshot(self, item: dict[str, Any], task_id: str, step: int) -> str | None:
+        """Save screenshot from computer_call_output if present. Returns path or None."""
+        if not isinstance(item, dict):
+            return None
+        if item.get("type") != "computer_call_output":
+            return None
+        output = item.get("output", {})
+        if not isinstance(output, dict):
+            return None
+        img_data = output.get("image_url") or output.get("image") or output.get("screenshot")
+        if not img_data:
+            return None
+        import base64
+
+        if isinstance(img_data, str) and img_data.startswith("data:"):
+            img_data = img_data.split(",", 1)[-1]
+        try:
+            raw = base64.b64decode(img_data)
+        except Exception:
+            return None
+        path = self._screenshot_dir / f"{task_id}_step{step}_{uuid.uuid4().hex[:8]}.png"
+        path.write_bytes(raw)
+        return str(path)
+
+    def _is_completion_message(self, output: list) -> bool:
+        """Detect if output indicates task completion."""
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if item.get("role") == "assistant":
+                content = item.get("content", "")
+                if isinstance(content, str):
+                    lower = content.lower()
+                    if "done" in lower or "complete" in lower or "finished" in lower:
+                        return True
+                if isinstance(content, list):
+                    for p in content:
+                        if isinstance(p, dict):
+                            text = p.get("text", "")
+                            if "done" in text.lower() or "complete" in text.lower():
+                                return True
+        return False
+
+    def _has_assistant_final(self, output: list) -> bool:
+        """Check if last output has assistant message."""
+        for item in reversed(output):
+            if isinstance(item, dict) and item.get("role") == "assistant":
+                return True
+        return False
