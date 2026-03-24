@@ -34,7 +34,14 @@ class MemoryGuard:
         return dict(self._last_metrics)
 
     async def get_reasoning_model(self, ollama_client: Any | None = None) -> str:
-        """Return primary or fallback model based on memory pressure."""
+        """Return primary or fallback model based on memory pressure.
+
+        Cloud models (ending with '-cloud') bypass pressure checks entirely
+        since they run on remote infrastructure and don't consume local resources.
+        """
+        if self._config.is_cloud_model:
+            return self._config.primary_model
+
         if self._fallback_triggered:
             return self._config.fallback_model
 
@@ -81,8 +88,8 @@ class MemoryGuard:
             self._last_metrics["fallback_triggered"] = True
             return True
 
-        # Trigger: pageout growth (simplified: high absolute count as proxy)
-        if pageouts > 1_000_000:
+        # Trigger: pageout growth (configurable, default 10M)
+        if self._config.pageout_threshold and pageouts > self._config.pageout_threshold:
             self._last_metrics["fallback_triggered"] = True
             return True
 

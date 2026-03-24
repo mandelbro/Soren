@@ -188,11 +188,71 @@ class TestMemoryGuard:
 
     @pytest.mark.asyncio
     async def test_returns_fallback_on_pageout_growth(self) -> None:
-        """MemoryGuard returns fallback on pageout growth."""
+        """MemoryGuard returns fallback when pageouts exceed threshold."""
         guard = MemoryGuard(LLMConfig(primary_model="primary", fallback_model="fallback"))
         with patch.object(guard, "_get_memory_pressure", return_value="normal"):
             with patch.object(guard, "_get_psutil_pressure", return_value=50.0):
                 with patch.object(guard, "_get_ollama_memory", new_callable=AsyncMock, return_value=0.0):
-                    with patch.object(guard, "_get_pageout_count", return_value=2_000_000):
+                    with patch.object(guard, "_get_pageout_count", return_value=15_000_000):
                         result = await guard.get_reasoning_model(None)
         assert result == "fallback"
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_below_pageout_threshold(self) -> None:
+        """MemoryGuard does NOT trigger fallback when pageouts are below 10M threshold."""
+        guard = MemoryGuard(LLMConfig(primary_model="primary", fallback_model="fallback"))
+        with patch.object(guard, "_get_memory_pressure", return_value="normal"):
+            with patch.object(guard, "_get_psutil_pressure", return_value=50.0):
+                with patch.object(guard, "_get_ollama_memory", new_callable=AsyncMock, return_value=0.0):
+                    with patch.object(guard, "_get_pageout_count", return_value=3_000_000):
+                        result = await guard.get_reasoning_model(None)
+        assert result == "primary"
+
+    @pytest.mark.asyncio
+    async def test_custom_pageout_threshold(self) -> None:
+        """MemoryGuard respects custom pageout_threshold from config."""
+        guard = MemoryGuard(
+            LLMConfig(primary_model="primary", fallback_model="fallback", pageout_threshold=5_000_000)
+        )
+        with patch.object(guard, "_get_memory_pressure", return_value="normal"):
+            with patch.object(guard, "_get_psutil_pressure", return_value=50.0):
+                with patch.object(guard, "_get_ollama_memory", new_callable=AsyncMock, return_value=0.0):
+                    with patch.object(guard, "_get_pageout_count", return_value=6_000_000):
+                        result = await guard.get_reasoning_model(None)
+        assert result == "fallback"
+
+    @pytest.mark.asyncio
+    async def test_cloud_model_bypasses_pressure_check(self) -> None:
+        """MemoryGuard skips pressure checks for cloud models (name ending with -cloud)."""
+        guard = MemoryGuard(
+            LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b")
+        )
+        # Simulate extreme pressure — should still return primary for cloud models
+        with patch.object(guard, "_get_memory_pressure", return_value="critical"):
+            with patch.object(guard, "_get_psutil_pressure", return_value=99.0):
+                with patch.object(guard, "_get_ollama_memory", new_callable=AsyncMock, return_value=0.0):
+                    with patch.object(guard, "_get_pageout_count", return_value=100_000_000):
+                        result = await guard.get_reasoning_model(None)
+        assert result == "gemma3:27b-cloud"
+        assert guard.fallback_triggered is False
+
+    @pytest.mark.asyncio
+    async def test_cloud_model_records_skipped_metrics(self) -> None:
+        """MemoryGuard records metrics with skipped=True for cloud models."""
+        guard = MemoryGuard(
+            LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b")
+        )
+        with patch.object(guard, "_check_pressure", new_callable=AsyncMock) as mock_pressure:
+            await guard.get_reasoning_model(None)
+            mock_pressure.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_cloud_model_still_checks_pressure(self) -> None:
+        """MemoryGuard still checks pressure for non-cloud models."""
+        guard = MemoryGuard(
+            LLMConfig(primary_model="gemma3:12b", fallback_model="gemma3:4b")
+        )
+        with patch.object(guard, "_check_pressure", new_callable=AsyncMock, return_value=True) as mock_pressure:
+            result = await guard.get_reasoning_model(None)
+            mock_pressure.assert_called_once()
+        assert result == "gemma3:4b"
