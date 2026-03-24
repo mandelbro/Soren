@@ -19,7 +19,7 @@ playbooks:
   write_back: true
 
 llm:
-  primary_model: "gemma3:12b"
+  primary_model: "gemma3:27b-cloud"
   fallback_model: "gemma3:4b"
 
 vlm:
@@ -28,7 +28,7 @@ vlm:
 
 verification:
   provider: "ollama"
-  model: "qwen3-vl:8b"
+  model: "qwen3-vl:235b-cloud"
 
 # Enter key patch: "enter_only" (default) or "escape_enter" (Escape before Enter for Slack etc.)
 enter_key_behavior: "enter_only"
