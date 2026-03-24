@@ -1,10 +1,11 @@
 # Soren Desktop Agent Framework
 set dotenv-load
 
-# Install/reinstall (fixes ModuleNotFoundError: No module named 'soren')
+# Install/sync — uv natively installs the project from pyproject.toml [build-system].
+# Do NOT add `uv pip install -e .` here; it conflicts with `uv run`'s implicit sync
+# and causes intermittent ModuleNotFoundError when asdf shims are present.
 install:
     uv sync --extra dev
-    uv pip install -e .
 
 # Primary commands
 begin-soren-cycle *ARGS:
@@ -80,10 +81,11 @@ lint:
 format:
     uv run ruff format src/ tests/
 
-# Ollama — Soren uses port 11435 (separate from default 11434)
-# Requires .env with OLLAMA_HOST; just loads it via dotenv-load
+# Ollama — Soren uses a DEDICATED instance on port 11435 (separate from default 11434)
+# The OLLAMA_HOST env var is loaded from .env via dotenv-load and also set explicitly
+# below so the server binds to the correct port regardless of shell env state.
 ollama-serve:
-    ollama serve
+    OLLAMA_HOST=http://127.0.0.1:11435 ollama serve
 
 # Resource validation (32 GB memory safeguard)
 check-resources:
