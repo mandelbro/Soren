@@ -28,11 +28,17 @@ data/*.json
 .env
 
 # Credentials (NEVER commit)
-config/.credentials.enc
-config/credentials.json
+config/*credentials*
+data/*credentials*
 
 # UV
 uv.lock
 
 # OS
 .DS_Store
+
+# Claude Settings
+.claude/settings.local.json
+
+# Database
+data/soren.db**
