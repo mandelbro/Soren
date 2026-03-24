@@ -16,10 +16,22 @@ class MemoryGuard:
     def __init__(self, llm_config: LLMConfig) -> None:
         self._config = llm_config
         self._fallback_triggered = False
+        self._last_metrics: dict[str, float | int | str | bool] = {}
 
     def reset_cycle(self) -> None:
         """Clear fallback flag for next cycle."""
         self._fallback_triggered = False
+        self._last_metrics = {}
+
+    @property
+    def fallback_triggered(self) -> bool:
+        """Expose whether fallback was triggered during the cycle."""
+        return self._fallback_triggered
+
+    @property
+    def last_metrics(self) -> dict[str, float | int | str | bool]:
+        """Return latest memory signal snapshot."""
+        return dict(self._last_metrics)
 
     async def get_reasoning_model(self, ollama_client: Any | None = None) -> str:
         """Return primary or fallback model based on memory pressure."""
@@ -35,7 +47,7 @@ class MemoryGuard:
     async def _check_pressure(self, ollama_client: Any | None) -> bool:
         """Return True if memory pressure triggers fallback."""
         # Signal 1: Ollama /api/ps memory (captured for metrics; threshold TBD)
-        _ = await self._get_ollama_memory(ollama_client)
+        ollama_gb = await self._get_ollama_memory(ollama_client)
 
         # Signal 2: macOS memory_pressure
         pressure = self._get_memory_pressure()
@@ -46,20 +58,32 @@ class MemoryGuard:
         # Signal 4: vm_stat pageouts
         pageouts = self._get_pageout_count()
 
+        self._last_metrics = {
+            "ollama_vram_gb": round(ollama_gb, 3),
+            "memory_pressure": pressure,
+            "psutil_percent": round(psutil_pct, 2),
+            "pageouts": pageouts,
+            "fallback_triggered": False,
+        }
+
         # Trigger: critical pressure
         if pressure == "critical":
+            self._last_metrics["fallback_triggered"] = True
             return True
 
         # Trigger: warn + psutil > 85%
         if pressure == "warn" and psutil_pct > 85:
+            self._last_metrics["fallback_triggered"] = True
             return True
 
         # Trigger: psutil > 90% alone
         if psutil_pct > 90:
+            self._last_metrics["fallback_triggered"] = True
             return True
 
         # Trigger: pageout growth (simplified: high absolute count as proxy)
         if pageouts > 1_000_000:
+            self._last_metrics["fallback_triggered"] = True
             return True
 
         return False

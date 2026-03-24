@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from soren.services.config_loader import SorenSettings
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
+    from soren.services.playbook_service import PlaybookService
     from soren.services.task_backlog import TaskBacklog
     from soren.services.task_discovery import TaskDiscovery
     from soren.services.task_executor import TaskExecutor
@@ -46,6 +47,8 @@ class SorenMetaAgent:
         *,
         identity_mgr: Any = None,
         report_dir: Path | None = None,
+        playbook_service: PlaybookService | None = None,
+        dry_run: bool = False,
     ) -> None:
         self._settings = settings
         self._db = db
@@ -54,6 +57,8 @@ class SorenMetaAgent:
         self._backlog = backlog
         self._discovery = discovery
         self._executor = executor
+        self._playbook_service = playbook_service
+        self._dry_run = dry_run
         self._persona_loader = persona_loader
         self._identity_mgr = identity_mgr
         self._report_dir = Path(report_dir or "data/reports")
@@ -190,6 +195,41 @@ class SorenMetaAgent:
             # 6. Finalize
             if task_result and task_result.success:
                 await self._backlog.mark_completed(task.id, task_result.model_dump())
+
+                # Playbook write-back (LLM summarizes steps into reusable instructions)
+                if (
+                    self._playbook_service
+                    and task.source_name
+                    and getattr(self._settings.playbooks, "write_back", True)
+                ):
+                    try:
+                        update = await self._playbook_service.write_back(
+                            task.source_name,
+                            task,
+                            task_result.step_log or [],
+                            dry_run=self._dry_run,
+                        )
+                        if update.dry_run and update.preview:
+                            report.playbook_preview = update.preview
+                    except Exception:
+                        pass
+
+                # Store memory after successful execution (cycle-tier for reuse)
+                try:
+                    memory_key = f"{task.source_name or 'default'}:{task.task_type or 'task'}:{task.persona_id or ''}"
+                    summary = (
+                        f"Completed {task.task_type or 'task'} on {task.source_name or 'unknown'}; "
+                        f"{task_result.steps_taken or 0} steps."
+                    )
+                    await self._memory_service.store(
+                        key=memory_key,
+                        value={"summary": summary, "task_id": task.id, "steps": task_result.steps_taken},
+                        entry_type="cycle",
+                        importance=0.6,
+                    )
+                    report.memory_entries_created = 1
+                except Exception:
+                    pass
             elif task_result and task_executed:
                 reason = classify_failure(task_result.error or "unknown")
                 await self._backlog.mark_failed(
@@ -201,6 +241,8 @@ class SorenMetaAgent:
             report.task_executed_id = task.id
             report.task_result = task_result
             report.total_agent_steps = (task_result.steps_taken or 0) if task_result else 0
+            report.total_screenshots_captured = len(task_result.screenshot_paths) if task_result else 0
+            report.screenshots = list(task_result.screenshot_paths) if task_result else []
 
         except Exception as e:
             report.task_result = TaskResult(success=False, error=str(e))
@@ -217,6 +259,18 @@ class SorenMetaAgent:
             report.total_duration_seconds = time.perf_counter() - start_ts
             report.backlog_snapshot = await self._backlog.get_summary()
             report.personas_used = [p.id for p in personas]
+
+            try:
+                telemetry = self._llm.get_telemetry()
+                model_used = telemetry.get("model_used")
+                memory_metrics = telemetry.get("memory_metrics")
+                if isinstance(model_used, str):
+                    report.model_used = model_used
+                report.fallback_triggered = bool(telemetry.get("fallback_triggered"))
+                if isinstance(memory_metrics, dict):
+                    report.memory_metrics = memory_metrics
+            except Exception:
+                pass
 
             try:
                 pruned = await self._memory_service.prune(min_importance=0.3)

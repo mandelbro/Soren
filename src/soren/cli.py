@@ -1,18 +1,18 @@
 """Click CLI for the Soren Desktop Agent Framework."""
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import asyncio
+import json
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
 from soren.services.config_loader import load_settings
 from soren.services.vm_manager import LumeConnectionError, VMManager
+
+load_dotenv()
 
 
 @click.group()
@@ -31,7 +31,8 @@ def cycle():
 
 @cycle.command("run")
 @click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
-def cycle_run(config):
+@click.option("--dry-run", is_flag=True, help="Preview playbook write-back without writing to disk")
+def cycle_run(config, dry_run):
     """Run a full Soren cycle: discover (if needed) -> execute one task -> finalize."""
     from pathlib import Path
 
@@ -40,6 +41,7 @@ def cycle_run(config):
     from soren.services.llm_service import LLMService
     from soren.services.meta_agent import SorenMetaAgent
     from soren.services.persona_loader import get_personas_dir, load_all
+    from soren.services.playbook_service import PlaybookService
     from soren.services.task_backlog import TaskBacklog, get_default_db_path
     from soren.services.task_discovery import TaskDiscovery
     from soren.services.task_executor import TaskExecutor
@@ -57,8 +59,9 @@ def cycle_run(config):
         )
         llm = LLMService(settings)
         vm = VMManager(settings.vm)
+        playbook_svc = PlaybookService(settings, llm)
         discovery = TaskDiscovery(settings, llm, vm, backlog)
-        executor = TaskExecutor(settings, llm, vm)
+        executor = TaskExecutor(settings, llm, vm, playbook_service=playbook_svc)
 
         def load_personas():
             return load_all(get_personas_dir())
@@ -73,6 +76,8 @@ def cycle_run(config):
             executor=executor,
             persona_loader=load_personas,
             report_dir=Path("data/reports"),
+            playbook_service=playbook_svc,
+            dry_run=dry_run,
         )
 
         try:
@@ -80,6 +85,10 @@ def cycle_run(config):
             if report.task_executed_id:
                 steps = (report.task_result and report.task_result.steps_taken) or 0
                 click.echo(f"Executed task: {report.task_executed_id[:8]}... ({steps} steps)")
+            if getattr(report, "playbook_preview", None):
+                console = Console()
+                console.print("\n[dim]Playbook preview (--dry-run):[/dim]")
+                console.print(report.playbook_preview[:2000] + ("..." if len(report.playbook_preview) > 2000 else ""))
             click.echo("Cycle complete.")
         except LumeConnectionError as e:
             click.echo(str(e), err=True)
@@ -404,23 +413,117 @@ def credentials():
 
 
 @credentials.command("encrypt")
-def credentials_encrypt():
-    """Encrypt a plaintext credentials file."""
-    click.echo("Not yet implemented: credentials encrypt")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True),
+    default="config/credentials.yaml",
+    show_default=True,
+    help="Path to plaintext YAML/JSON credential file",
+)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(),
+    default="config/credentials.enc",
+    show_default=True,
+    help="Path for encrypted credential payload",
+)
+@click.option(
+    "--key-file",
+    type=click.Path(),
+    default="data/credentials.key",
+    show_default=True,
+    help="Fernet key path (ignored when SOREN_CREDENTIALS_KEY is set)",
+)
+def credentials_encrypt(input_path, output_path, key_file):
+    """Encrypt a plaintext credentials file for at-rest storage."""
+    from soren.services.credentials_service import CredentialStore
+
+    store = CredentialStore(Path(output_path), key_path=Path(key_file))
+    try:
+        count = store.encrypt_plaintext_file(Path(input_path))
+        click.echo(f"Encrypted {count} credential record(s) -> {output_path}")
+    except (ValueError, FileNotFoundError) as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
 
 
 @credentials.command("add")
 @click.argument("ref")
 @click.argument("service_type")
-def credentials_add(ref, service_type):
-    """Add a credential for a service."""
-    click.echo("Not yet implemented: credentials add")
+@click.option("--username", prompt=True, help="Service username/email")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Service password")
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(),
+    default="config/credentials.enc",
+    show_default=True,
+    help="Path for encrypted credential payload",
+)
+@click.option(
+    "--key-file",
+    type=click.Path(),
+    default="data/credentials.key",
+    show_default=True,
+    help="Fernet key path (ignored when SOREN_CREDENTIALS_KEY is set)",
+)
+def credentials_add(ref, service_type, username, password, output_path, key_file):
+    """Add or update a credential reference in encrypted storage."""
+    from soren.services.credentials_service import CredentialStore
+
+    store = CredentialStore(Path(output_path), key_path=Path(key_file))
+    try:
+        store.add(
+            ref=ref,
+            service_type=service_type,
+            username=username,
+            password=password,
+        )
+        click.echo(f"Stored credential ref '{ref}' for service '{service_type}'.")
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
 
 
 @credentials.command("list")
-def credentials_list():
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(),
+    default="config/credentials.enc",
+    show_default=True,
+    help="Path to encrypted credential payload",
+)
+@click.option(
+    "--key-file",
+    type=click.Path(),
+    default="data/credentials.key",
+    show_default=True,
+    help="Fernet key path (ignored when SOREN_CREDENTIALS_KEY is set)",
+)
+def credentials_list(input_path, key_file):
     """List credential references (no secrets shown)."""
-    click.echo("Not yet implemented: credentials list")
+    from soren.services.credentials_service import CredentialStore
+
+    store = CredentialStore(Path(input_path), key_path=Path(key_file))
+    try:
+        refs = store.list_refs()
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    if not refs:
+        click.echo("No encrypted credentials found.")
+        return
+    table = Table(title="Credential References")
+    table.add_column("Ref", style="cyan")
+    table.add_column("Service", style="yellow")
+    table.add_column("Updated", style="dim")
+    for entry in refs:
+        table.add_row(entry.ref, entry.service_type, entry.updated_at)
+    console = Console()
+    console.print(table)
 
 
 # --- Playbooks group ---
@@ -432,16 +535,54 @@ def playbooks():
 
 
 @playbooks.command("list")
-def playbooks_list():
-    """List all service playbooks."""
-    click.echo("Not yet implemented: playbooks list")
+@click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
+def playbooks_list(config):
+    """List all service playbooks with metadata."""
+    from soren.services.config_loader import load_settings
+    from soren.services.llm_service import LLMService
+    from soren.services.playbook_service import PlaybookService
+
+    settings = load_settings(Path(config) if config else None)
+    llm = LLMService(settings)
+    svc = PlaybookService(settings, llm)
+    infos = svc.list_playbooks()
+    if not infos:
+        click.echo("No playbooks found.")
+        return
+    table = Table(title="Service Playbooks")
+    table.add_column("Service", style="cyan")
+    table.add_column("Size", justify="right", style="dim")
+    table.add_column("Last Modified", style="yellow")
+    table.add_column("Sections", justify="right")
+    for p in infos:
+        table.add_row(
+            p.service_name,
+            f"{p.file_size} B",
+            p.last_modified[:19] if len(p.last_modified) > 19 else p.last_modified,
+            str(p.section_count),
+        )
+    console = Console()
+    console.print(table)
 
 
 @playbooks.command("show")
 @click.argument("service")
-def playbooks_show(service):
+@click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
+def playbooks_show(service, config):
     """Show a specific service playbook."""
-    click.echo("Not yet implemented: playbooks show")
+    from soren.services.config_loader import load_settings
+    from soren.services.llm_service import LLMService
+    from soren.services.playbook_service import PlaybookService
+
+    settings = load_settings(Path(config) if config else None)
+    llm = LLMService(settings)
+    svc = PlaybookService(settings, llm)
+    content = svc.load(service)
+    if content is None:
+        click.echo(f"No playbook found for service: {service}", err=True)
+        raise SystemExit(1)
+    console = Console()
+    console.print(content)
 
 
 # --- Personas group ---
@@ -455,13 +596,60 @@ def personas():
 @personas.command("validate")
 def personas_validate():
     """Validate all persona YAML files."""
-    click.echo("Not yet implemented: personas validate")
+    import yaml
+    from pydantic import ValidationError
+
+    from soren.services.persona_loader import get_personas_dir, load_persona
+
+    personas_dir = get_personas_dir()
+    files = sorted(personas_dir.glob("*.yaml"))
+    if not files:
+        click.echo(f"No persona YAML files found in {personas_dir}.")
+        return
+
+    table = Table(title="Persona Validation")
+    table.add_column("File", style="cyan")
+    table.add_column("Status", style="yellow")
+    table.add_column("Details", style="dim")
+
+    invalid_count = 0
+    for file_path in files:
+        try:
+            persona = load_persona(file_path)
+            source_count = len(persona.task_sources)
+            table.add_row(file_path.name, "OK", f"id={persona.id}, sources={source_count}")
+        except (ValidationError, yaml.YAMLError) as e:
+            invalid_count += 1
+            table.add_row(file_path.name, "INVALID", str(e).splitlines()[0][:140])
+    console = Console()
+    console.print(table)
+    if invalid_count:
+        raise SystemExit(1)
 
 
 @personas.command("list")
 def personas_list():
     """List all configured personas."""
-    click.echo("Not yet implemented: personas list")
+    from soren.services.persona_loader import get_personas_dir, load_all
+
+    personas = load_all(get_personas_dir())
+    if not personas:
+        click.echo("No personas found.")
+        return
+    table = Table(title="Configured Personas")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="yellow")
+    table.add_column("Enabled", style="green")
+    table.add_column("Task Sources", justify="right")
+    for persona in personas:
+        table.add_row(
+            persona.id,
+            persona.name,
+            "yes" if persona.enabled else "no",
+            str(len(persona.task_sources)),
+        )
+    console = Console()
+    console.print(table)
 
 
 # --- Resources group ---
@@ -531,6 +719,82 @@ def history():
 
 @history.command("show")
 @click.option("--limit", default=10, type=int, help="Number of entries")
-def history_show(limit):
+@click.option(
+    "--report-dir",
+    type=click.Path(),
+    default="data/reports",
+    show_default=True,
+    help="Directory containing cycle report JSON files",
+)
+def history_show(limit, report_dir):
     """Show recent cycle history."""
-    click.echo("Not yet implemented: history show")
+    report_path = Path(report_dir)
+    if not report_path.exists():
+        click.echo(f"No report directory found at {report_path}.")
+        return
+
+    entries: list[dict] = []
+    for path in sorted(report_path.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if path.name == "latest.json":
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            entries.append(data)
+        except json.JSONDecodeError:
+            continue
+        if len(entries) >= limit:
+            break
+
+    if not entries:
+        click.echo("No cycle reports found.")
+        return
+
+    table = Table(title="Recent Cycles")
+    table.add_column("Cycle", style="cyan")
+    table.add_column("Started", style="dim")
+    table.add_column("Type", style="yellow")
+    table.add_column("Task", style="blue")
+    table.add_column("Status", style="green")
+    table.add_column("Duration", justify="right")
+
+    for item in entries:
+        cycle_id = str(item.get("cycle_id", ""))[:8]
+        started = str(item.get("started_at", ""))[:19]
+        cycle_type = str(item.get("cycle_type", "execute"))
+        task_id = str(item.get("task_executed_id") or "—")
+        task_result = item.get("task_result") or {}
+        status = "n/a"
+        if isinstance(task_result, dict) and "success" in task_result:
+            status = "success" if task_result.get("success") else "failed"
+        duration = f"{float(item.get('total_duration_seconds', 0.0)):.1f}s"
+        table.add_row(cycle_id or "—", started or "—", cycle_type, task_id[:8], status, duration)
+
+    console = Console()
+    console.print(table)
+
+
+# --- UAT group ---
+
+
+@cli.group()
+def uat():
+    """User-acceptance testing helpers."""
+
+
+@uat.command("checklist")
+def uat_checklist():
+    """Show the ready-for-user-testing smoke checklist."""
+    checklist = [
+        "1) Run a full cycle",
+        "   - soren cycle run",
+        "2) Confirm cycle reporting output",
+        "   - soren history show --limit 5",
+        "3) Confirm encrypted credentials are available",
+        "   - soren credentials list",
+        "4) Reset browser state and verify clean baseline",
+        "   - soren vm reset",
+    ]
+    click.echo("Soren UAT Smoke Checklist")
+    click.echo("-------------------------")
+    click.echo("\n".join(checklist))
+    click.echo("\nReference: docs/uat-smoke-checklist.md")

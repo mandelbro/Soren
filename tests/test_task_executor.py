@@ -8,7 +8,9 @@ import pytest
 from soren.models.persona import Persona, Traits
 from soren.models.session import TaskResult
 from soren.models.task import Task
+from soren.models.task_source import TaskSource
 from soren.services.task_executor import TaskExecutor
+from soren.verification.correction import CorrectionStrategy
 
 
 def _make_task(
@@ -27,6 +29,21 @@ def _make_task(
 
 def _make_persona() -> Persona:
     return Persona(name="Test", traits=Traits())
+
+
+def _make_persona_with_source(credential_ref: str = "") -> Persona:
+    return Persona(
+        name="Test",
+        traits=Traits(),
+        task_sources=[
+            TaskSource(
+                name="TestSource",
+                type="survey_platform",
+                url="https://example.com",
+                credential_ref=credential_ref,
+            )
+        ],
+    )
 
 
 def _make_executor(tmp_path: Path, step_budget: int = 50) -> TaskExecutor:
@@ -124,6 +141,33 @@ class TestTaskExecutorConstruction:
             await executor.execute(_make_task(), _make_persona(), mock_computer)
             call_kwargs = mock_agent_cls.call_args[1]
             assert call_kwargs["model"] == "mlx/custom/UI-TARS-7B"
+
+    @pytest.mark.asyncio
+    async def test_includes_credential_handoff_in_instructions(self, tmp_path: Path) -> None:
+        """TaskExecutor appends source credential details into execution instructions."""
+        settings = MagicMock()
+        llm = MagicMock()
+        vm = MagicMock()
+        store = MagicMock()
+        store.get.return_value = MagicMock(username="user@example.com", password="secret123")
+        executor = TaskExecutor(
+            settings=settings,
+            llm=llm,
+            vm=vm,
+            step_budget=50,
+            screenshot_dir=tmp_path / "screenshots",
+            credential_store=store,
+        )
+        mock_computer = MagicMock()
+        with patch("agent.ComputerAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.run = lambda *a, **k: async_gen([])
+            mock_agent_cls.return_value = mock_agent
+            await executor.execute(_make_task(), _make_persona_with_source("sproutful"), mock_computer)
+            instructions = mock_agent_cls.call_args[1]["instructions"]
+            assert "credential_ref: sproutful" in instructions
+            assert "username: user@example.com" in instructions
+            assert "password: secret123" in instructions
 
 
 class TestStepBudget:
@@ -320,6 +364,38 @@ class TestTaskExecutorIntegration:
         assert result.step_log is not None
         # Executor did not crash. steps_taken > 0 when agent ran; 0 when VLM/model fails before first step
         assert result.steps_taken >= 0
+
+    @pytest.mark.asyncio
+    async def test_verification_failure_applies_correction_strategy(self, tmp_path: Path) -> None:
+        """Verification failure triggers correction escalation and failed result."""
+        executor = _make_executor(tmp_path)
+
+        async def completion_with_screenshot(*_args, **_kwargs):
+            yield {"output": [{"type": "computer_call_output", "output": {"image": "aGVsbG8="}}]}
+            yield {"output": [{"role": "assistant", "content": "Task complete."}]}
+
+        with (
+            patch("agent.ComputerAgent") as mock_agent_cls,
+            patch.object(executor, "_verify_completion", return_value=False) as verify_mock,
+            patch.object(
+                executor,
+                "_attempt_corrections",
+                return_value=CorrectionStrategy.KEYPRESS,
+            ) as correction_mock,
+        ):
+            mock_agent = MagicMock()
+            mock_agent.run = completion_with_screenshot
+            mock_agent_cls.return_value = mock_agent
+
+            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
+
+            verify_mock.assert_awaited_once()
+            correction_mock.assert_awaited_once()
+            assert result.success is False
+            assert result.verification_passed is False
+            assert result.correction_applied == CorrectionStrategy.KEYPRESS.value
+            assert any(step.get("action_type") == "verify" for step in result.step_log)
+            assert any(step.get("action_type") == "correction" for step in result.step_log)
 
 
 async def async_gen(items):

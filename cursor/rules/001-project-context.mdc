@@ -1,0 +1,67 @@
+---
+description: Soren project context and implementation guardrails
+alwaysApply: true
+---
+
+# Soren Project Rule
+
+## Project Intent
+
+Soren is a local-first desktop agent framework for automating browser tasks through vision-based interaction inside isolated macOS VMs.
+The core loop is: assess backlog -> discover (if empty) -> execute one task -> verify/finalize -> persist results.
+
+## Technology and Runtime
+
+- Python `3.12+` with `uv` and `src` layout
+- CLI implemented with Click (`soren` entry point)
+- Core storage in SQLite (task backlog, memory, cycle reports)
+- Local model stack: Ollama + UI-TARS/Qwen vision models
+- VM orchestration via Lume and CUA computer tooling
+
+## Canonical Commands
+
+Use `justfile` commands first:
+
+- `just begin-soren-cycle` for full orchestrated cycle
+- `just refresh-tasks` for discovery-only backlog refresh
+- `just list-tasks` and `just show-history` for operational visibility
+- `just test` for test suite, `just lint` and `just format` for quality checks
+
+## Architecture Guardrails
+
+When changing code, preserve these boundaries:
+
+- `src/soren/cli.py`: command wiring and user-facing CLI only
+- `src/soren/services/meta_agent.py`: lifecycle orchestration and decision flow
+- `src/soren/services/task_discovery.py`: source scanning and discovered task creation
+- `src/soren/services/task_executor.py`: ComputerAgent execution, step budget, screenshots
+- `src/soren/services/task_backlog.py` and `database.py`: persistence and retry lifecycle
+- `src/soren/models/`: Pydantic models and schema contracts
+- `src/soren/adapters/`: service-specific discovery instruction logic (not DOM scraping)
+
+## Implementation Conventions
+
+- Keep discovery and execution decoupled (do not merge into one inline flow).
+- Prefer additive service modules over expanding CLI handlers with business logic.
+- Maintain retry semantics and status transitions (`queued`, `in_progress`, `completed`, `dead_letter`).
+- Keep local-only inference assumptions unless a requirement explicitly changes.
+- Preserve persona-driven behavior and playbook write-back pathways.
+
+## Testing Expectations
+
+- Add or update unit tests in `tests/` for orchestration, backlog transitions, and adapter behavior.
+- For execution/discovery changes, validate happy path plus failure classification and retry behavior.
+- Use markers appropriately (`integration`, `e2e`) and keep default suite deterministic.
+
+## Safety and Data Handling
+
+- Do not log plaintext credentials.
+- Preserve encrypted credential workflows and VM-isolated execution assumptions.
+- Avoid changes that bypass memory/resource safeguards (for example, high-memory abort logic).
+
+## Editing Guidance for AI Agents
+
+- Start with `README.md`, `docs/rfc.md`, and `docs/prd.md` before major refactors.
+- Follow existing naming and module patterns in `src/soren/services`.
+- Keep patches focused and small; avoid broad rewrites when targeted edits suffice.
+- After substantive changes, run `just lint` and relevant tests before concluding work.

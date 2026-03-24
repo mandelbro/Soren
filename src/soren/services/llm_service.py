@@ -28,6 +28,7 @@ class LLMService:
         host = os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST)
         self._client = AsyncClient(host=host)
         self._memory_guard = MemoryGuard(settings.llm)
+        self._last_model_used: str | None = None
 
     @property
     def memory_guard(self) -> MemoryGuard:
@@ -41,6 +42,7 @@ class LLMService:
     ) -> str:
         """Generate text with keep_alive=0. Uses MemoryGuard model when model is None."""
         model = model or await self._memory_guard.get_reasoning_model(self._client)
+        self._last_model_used = model
 
         if images:
             resp = await self._client.generate(
@@ -65,6 +67,7 @@ class LLMService:
     ) -> T:
         """Generate structured output via JSON mode + Pydantic parsing."""
         model = model or await self._memory_guard.get_reasoning_model(self._client)
+        self._last_model_used = model
         full_prompt = f"{prompt}\n\nRespond with valid JSON matching this schema: {schema.model_json_schema()}"
         resp = await self._client.generate(
             model=model,
@@ -102,3 +105,11 @@ class LLMService:
             await self._client.generate(model=model, prompt="", keep_alive=0)
         except Exception:
             pass
+
+    def get_telemetry(self) -> dict[str, Any]:
+        """Return model selection and memory-guard telemetry for cycle reports."""
+        return {
+            "model_used": self._last_model_used,
+            "fallback_triggered": self._memory_guard.fallback_triggered,
+            "memory_metrics": self._memory_guard.last_metrics or None,
+        }

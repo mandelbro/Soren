@@ -1,6 +1,11 @@
 # Soren Desktop Agent Framework
 set dotenv-load
 
+# Install/reinstall (fixes ModuleNotFoundError: No module named 'soren')
+install:
+    uv sync --extra dev
+    uv pip install -e .
+
 # Primary commands
 begin-soren-cycle *ARGS:
     uv run soren cycle run {{ARGS}}

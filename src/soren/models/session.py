@@ -52,8 +52,11 @@ class TaskResult(BaseModel):
     success: bool
     steps_taken: int = 0
     step_log: list[dict[str, Any]] = Field(default_factory=list)
+    screenshot_paths: list[str] = Field(default_factory=list)
     duration_seconds: float = 0.0
     error: str | None = None
+    verification_passed: bool | None = None
+    correction_applied: str | None = None
 
     model_config = {"from_attributes": True, "extra": "ignore"}
 
@@ -94,6 +97,8 @@ class CycleReport(BaseModel):
     total_screenshots_captured: int = 0
     model_used: str | None = None
     fallback_triggered: bool = False
+    memory_metrics: dict[str, Any] | None = None
     screenshots: list[str] = Field(default_factory=list)
+    playbook_preview: str | None = None
 
     model_config = {"from_attributes": True, "extra": "ignore"}

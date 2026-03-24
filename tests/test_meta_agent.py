@@ -52,6 +52,8 @@ def _make_agent(
     settings.llm = MagicMock()
     settings.scheduler = MagicMock()
     settings.scheduler.retry_backoff_minutes = [5, 30, 120]
+    settings.playbooks = MagicMock()
+    settings.playbooks.write_back = True
 
     db = MagicMock()
     # MemoryService uses db.execute (async) - mock it for recall/prune

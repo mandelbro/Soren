@@ -6,6 +6,7 @@ import yaml
 from pydantic import BaseModel
 
 from soren.models.llm import LLMConfig
+from soren.models.playbooks import PlaybooksConfig
 from soren.models.scheduler import SchedulerConfig
 from soren.models.verification import VerificationConfig
 from soren.models.vlm import VLMConfig
@@ -20,6 +21,7 @@ class SorenSettings(BaseModel):
     vlm: VLMConfig = VLMConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     verification: VerificationConfig = VerificationConfig()
+    playbooks: PlaybooksConfig = PlaybooksConfig()
 
 
 def load_settings(path: Path | None = None) -> SorenSettings:
@@ -50,4 +52,9 @@ def load_settings(path: Path | None = None) -> SorenSettings:
     verification_raw = raw.get("verification", {})
     verification = VerificationConfig.model_validate(verification_raw) if verification_raw else defaults.verification
 
-    return SorenSettings(vm=vm, llm=llm, vlm=vlm, scheduler=scheduler, verification=verification)
+    playbooks_raw = raw.get("playbooks", {})
+    playbooks = PlaybooksConfig.model_validate(playbooks_raw) if playbooks_raw else defaults.playbooks
+
+    return SorenSettings(
+        vm=vm, llm=llm, vlm=vlm, scheduler=scheduler, verification=verification, playbooks=playbooks
+    )

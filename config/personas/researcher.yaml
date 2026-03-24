@@ -2,7 +2,7 @@ name: Research Analyst
 id: researcher
 description: Survey participant persona
 demographics:
-  age: "25-34"
+  age: "35-44"
   occupation: Software Engineer
   education: Bachelor's
   location: United States
@@ -17,9 +17,10 @@ preferences:
   formality: professional
   decision_speed: moderate
 task_sources:
-  - name: prolific
+  - name: sproutful
     type: survey_platform
-    url: https://app.prolific.com
-    credential_ref: prolific
+    url: https://sproutful.com/home
+    credential_ref: sproutful
     enabled: true
+    discovery_hint: "Look for available surveys showing reward amount and estimated time"
 enabled: true

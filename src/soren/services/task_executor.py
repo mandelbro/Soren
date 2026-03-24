@@ -10,11 +10,16 @@ from typing import TYPE_CHECKING, Any
 from soren.models.persona import Persona
 from soren.models.session import TaskResult
 from soren.models.task import Task
+from soren.services.credentials_service import CredentialStore
 from soren.services.persona_context import PersonaContext
+from soren.verification.baseline import BaselineManager
+from soren.verification.correction import CorrectionStrategy, apply_correction
+from soren.verification.verifier import ActionVerifier
 
 if TYPE_CHECKING:
     from soren.services.config_loader import SorenSettings
     from soren.services.llm_service import LLMService
+    from soren.services.playbook_service import PlaybookService
     from soren.services.vm_manager import VMManager
 
 DEFAULT_STEP_BUDGET = 50
@@ -33,14 +38,18 @@ class TaskExecutor:
         step_budget: int = DEFAULT_STEP_BUDGET,
         vlm_model: str | None = None,
         screenshot_dir: Path | None = None,
+        playbook_service: PlaybookService | None = None,
+        credential_store: CredentialStore | None = None,
     ) -> None:
         self._settings = settings
         self._llm = llm
         self._vm = vm
         self._step_budget = step_budget
+        self._playbook_service = playbook_service
         vlm_config = getattr(settings, "vlm", None)
         self._vlm_model = vlm_model or (vlm_config.full_model_str() if vlm_config else DEFAULT_VLM_MODEL)
         self._screenshot_dir = screenshot_dir or Path("data/screenshots")
+        self._credential_store = credential_store
 
     async def execute(
         self,
@@ -59,12 +68,26 @@ class TaskExecutor:
         started = time.perf_counter()
         step_log: list[dict[str, Any]] = []
         screenshots_captured: list[str] = []
+        last_screenshot_bytes: bytes | None = None
         steps_taken = 0
         error_msg: str | None = None
         success = False
+        verification_passed: bool | None = None
+        correction_applied: str | None = None
 
+        playbook_content: str | None = None
+        if self._playbook_service and task.source_name:
+            raw = self._playbook_service.load(task.source_name)
+            if raw:
+                playbook_content = self._playbook_service.get_relevant_sections(
+                    raw, task.task_type or "survey"
+                )
         persona_context = PersonaContext.build(
-            persona, task, memories=memories, step_budget=self._step_budget
+            persona,
+            task,
+            playbook_content=playbook_content,
+            memories=self._compose_memories(task, persona, memories),
+            step_budget=self._step_budget,
         )
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
 
@@ -91,6 +114,9 @@ class TaskExecutor:
                     screenshot_path = self._extract_screenshot(item, task.id, steps_taken)
                     if screenshot_path:
                         screenshots_captured.append(screenshot_path)
+                    screenshot_bytes = self._extract_screenshot_bytes(item)
+                    if screenshot_bytes:
+                        last_screenshot_bytes = screenshot_bytes
 
                 if steps_taken >= self._step_budget:
                     error_msg = f"Step budget ({self._step_budget}) exceeded"
@@ -103,6 +129,32 @@ class TaskExecutor:
             if not success and not error_msg and steps_taken > 0:
                 success = self._has_assistant_final(last_output)
 
+            if success and last_screenshot_bytes:
+                verification_passed = await self._verify_completion(task, last_screenshot_bytes)
+                step_log.append(
+                    {
+                        "step": steps_taken,
+                        "action_type": "verify",
+                        "action_data": {"passed": verification_passed},
+                        "vlm_reasoning": "Tiered verification after completion signal",
+                    }
+                )
+                if verification_passed is False:
+                    strategy = await self._attempt_corrections(computer)
+                    if strategy:
+                        correction_applied = strategy.value
+                        step_log.append(
+                            {
+                                "step": steps_taken,
+                                "action_type": "correction",
+                                "action_data": {"strategy": strategy.value},
+                                "vlm_reasoning": "Applied correction after verification failure",
+                            }
+                        )
+                    success = False
+                    if not error_msg:
+                        error_msg = "Verification failed after completion signal"
+
         except Exception as e:
             error_msg = str(e)
             success = False
@@ -112,8 +164,66 @@ class TaskExecutor:
             success=success,
             steps_taken=steps_taken,
             step_log=step_log,
+            screenshot_paths=screenshots_captured,
             duration_seconds=duration,
             error=error_msg,
+            verification_passed=verification_passed,
+            correction_applied=correction_applied,
+        )
+
+    def _compose_memories(
+        self,
+        task: Task,
+        persona: Persona,
+        memories: list[str] | None,
+    ) -> list[str]:
+        """Merge recalled memories with explicit credential handoff instructions."""
+        combined = list(memories or [])
+        credential_handoff = self._build_credential_handoff(task, persona)
+        if credential_handoff:
+            combined.append(credential_handoff)
+        return combined
+
+    def _build_credential_handoff(self, task: Task, persona: Persona) -> str | None:
+        """Build execution-time login instructions from source credential_ref."""
+        source_ref = ""
+        for source in persona.task_sources:
+            if source.name == task.source_name:
+                source_ref = source.credential_ref.strip()
+                break
+        if not source_ref:
+            return None
+
+        if self._credential_store is None:
+            try:
+                self._credential_store = CredentialStore(
+                    Path("config/credentials.enc"),
+                    key_path=Path("data/credentials.key"),
+                )
+            except Exception:
+                return (
+                    "Credential handoff:\n"
+                    f"- credential_ref: {source_ref}\n"
+                    "- Encrypted credential store failed to initialize.\n"
+                    "- If login is required, stop and report login_failure."
+                )
+
+        try:
+            cred = self._credential_store.get(source_ref)
+        except (KeyError, ValueError):
+            return (
+                "Credential handoff:\n"
+                f"- credential_ref: {source_ref}\n"
+                "- Encrypted credential was not available at runtime.\n"
+                "- If login is required, stop and report login_failure."
+            )
+
+        return (
+            "Credential handoff (sensitive; do not echo in outputs):\n"
+            f"- credential_ref: {source_ref}\n"
+            f"- username: {cred.username}\n"
+            f"- password: {cred.password}\n"
+            "- Use only for required login actions, then continue task execution."
         )
 
     def _parse_output_item(self, item: dict[str, Any], task_id: str, step: int) -> dict[str, Any] | None:
@@ -170,6 +280,59 @@ class TaskExecutor:
         path = self._screenshot_dir / f"{task_id}_step{step}_{uuid.uuid4().hex[:8]}.png"
         path.write_bytes(raw)
         return str(path)
+
+    def _extract_screenshot_bytes(self, item: dict[str, Any]) -> bytes | None:
+        """Extract screenshot bytes from computer_call_output if present."""
+        if not isinstance(item, dict) or item.get("type") != "computer_call_output":
+            return None
+        output = item.get("output", {})
+        if not isinstance(output, dict):
+            return None
+        img_data = output.get("image_url") or output.get("image") or output.get("screenshot")
+        if not img_data:
+            return None
+        import base64
+
+        if isinstance(img_data, str) and img_data.startswith("data:"):
+            img_data = img_data.split(",", 1)[-1]
+        try:
+            return base64.b64decode(img_data)
+        except Exception:
+            return None
+
+    async def _verify_completion(self, task: Task, screenshot: bytes) -> bool:
+        """Run tiered verification for completion confirmation."""
+        verification_cfg = getattr(self._settings, "verification", None)
+        verification_model = verification_cfg.model if verification_cfg else "qwen3-vl:8b"
+        verifier = ActionVerifier(
+            baseline_manager=BaselineManager(Path("data/baselines")),
+            llm_service=self._llm,
+            verification_model=verification_model,
+        )
+        expected_state = task.title or task.description or "Task completed successfully"
+        baseline_name = task.source_name or None
+        result = await verifier.verify(
+            screenshot=screenshot,
+            expected_state=expected_state,
+            baseline_name=baseline_name,
+        )
+        return result.passed
+
+    async def _attempt_corrections(self, computer: Any) -> CorrectionStrategy | None:
+        """Apply correction strategies after verification failure."""
+        interface = getattr(computer, "interface", None)
+        if interface is None:
+            return None
+
+        for strategy in (
+            CorrectionStrategy.KEYPRESS,
+            CorrectionStrategy.OSASCRIPT_ACTIVATE,
+            CorrectionStrategy.FULL_OSASCRIPT,
+        ):
+            ok = await apply_correction(strategy, interface, {"failure": "verification_failed"})
+            if ok:
+                return strategy
+        return None
 
     def _is_completion_message(self, output: list) -> bool:
         """Detect if output indicates task completion."""

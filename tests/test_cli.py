@@ -8,7 +8,17 @@ from click.testing import CliRunner
 from soren.cli import cli
 from soren.models.vm import VMConfig
 
-SUBCOMMAND_GROUPS = ["cycle", "discover", "tasks", "vm", "credentials", "playbooks", "personas", "history"]
+SUBCOMMAND_GROUPS = [
+    "cycle",
+    "discover",
+    "tasks",
+    "vm",
+    "credentials",
+    "playbooks",
+    "personas",
+    "history",
+    "uat",
+]
 
 
 @pytest.fixture
@@ -42,10 +52,36 @@ class TestSubcommandGroups:
 
 
 class TestCycleCommands:
-    def test_cycle_run_stub(self, runner):
-        result = runner.invoke(cli, ["cycle", "run"])
+    def test_cycle_run_runs(self, runner, tmp_path):
+        """cycle run executes (mocked to avoid VM/LLM)."""
+        with (
+            patch("soren.services.task_backlog.get_default_db_path", return_value=tmp_path / "soren.db"),
+            patch("soren.cli.VMManager") as mock_vm_cls,
+            patch("soren.services.meta_agent.SorenMetaAgent") as mock_agent_cls,
+        ):
+            from soren.models.session import CycleReport
+
+            mock_vm = MagicMock()
+            mock_vm.vm_name = "test-vm"
+            mock_vm.ensure_ready = AsyncMock()
+            mock_vm.connect_computer = AsyncMock(return_value=MagicMock())
+            mock_vm_cls.return_value = mock_vm
+
+            mock_agent = MagicMock()
+            mock_agent.run_cycle = AsyncMock(
+                return_value=CycleReport(
+                    cycle_id="x",
+                    cycle_type="execute",
+                    started_at="",
+                    completed_at="",
+                    vm_name="test-vm",
+                )
+            )
+            mock_agent_cls.return_value = mock_agent
+
+            result = runner.invoke(cli, ["cycle", "run"])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Cycle complete" in result.output or "Assessing backlog" in result.output
 
 
 class TestDiscoverCommands:
@@ -184,52 +220,143 @@ class TestVMCommands:
 
 
 class TestCredentialsCommands:
-    def test_credentials_encrypt_stub(self, runner):
-        result = runner.invoke(cli, ["credentials", "encrypt"])
+    def test_credentials_encrypt_from_plaintext(self, runner, tmp_path):
+        plain = tmp_path / "credentials.yaml"
+        plain.write_text(
+            "credentials:\n"
+            "  - ref: sproutful\n"
+            "    service_type: survey_platform\n"
+            "    username: user@example.com\n"
+            "    password: secret\n"
+        )
+        encrypted = tmp_path / "credentials.enc"
+        key_file = tmp_path / "credentials.key"
+        result = runner.invoke(
+            cli,
+            [
+                "credentials",
+                "encrypt",
+                "--input",
+                str(plain),
+                "--output",
+                str(encrypted),
+                "--key-file",
+                str(key_file),
+            ],
+        )
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Encrypted 1 credential record" in result.output
 
-    def test_credentials_add_accepts_args(self, runner):
-        result = runner.invoke(cli, ["credentials", "add", "my-twitter", "twitter"])
+    def test_credentials_add_accepts_args(self, runner, tmp_path):
+        encrypted = tmp_path / "credentials.enc"
+        key_file = tmp_path / "credentials.key"
+        result = runner.invoke(
+            cli,
+            [
+                "credentials",
+                "add",
+                "my-twitter",
+                "twitter",
+                "--username",
+                "user@example.com",
+                "--password",
+                "s3cret",
+                "--output",
+                str(encrypted),
+                "--key-file",
+                str(key_file),
+            ],
+        )
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Stored credential ref 'my-twitter'" in result.output
 
-    def test_credentials_list_stub(self, runner):
-        result = runner.invoke(cli, ["credentials", "list"])
+    def test_credentials_list_outputs_refs(self, runner, tmp_path):
+        from soren.services.credentials_service import CredentialStore
+
+        encrypted = tmp_path / "credentials.enc"
+        key_file = tmp_path / "credentials.key"
+        store = CredentialStore(encrypted, key_path=key_file)
+        store.add(
+            ref="sproutful",
+            service_type="survey_platform",
+            username="user@example.com",
+            password="secret",
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "credentials",
+                "list",
+                "--input",
+                str(encrypted),
+                "--key-file",
+                str(key_file),
+            ],
+        )
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "sproutful" in result.output
 
 
 class TestPlaybooksCommands:
-    def test_playbooks_list_stub(self, runner):
+    def test_playbooks_list_empty(self, runner):
+        """playbooks list returns 0 and message when no playbooks exist."""
         result = runner.invoke(cli, ["playbooks", "list"])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "No playbooks found" in result.output
 
-    def test_playbooks_show_accepts_service(self, runner):
-        result = runner.invoke(cli, ["playbooks", "show", "twitter"])
+    def test_playbooks_show_missing_exits_with_error(self, runner):
+        """playbooks show exits 1 when playbook does not exist."""
+        result = runner.invoke(cli, ["playbooks", "show", "nonexistent-service"])
+        assert result.exit_code == 1
+        assert "No playbook found" in result.output or "nonexistent" in result.output.lower()
+
+    def test_playbooks_show_displays_content(self, runner, tmp_path):
+        """playbooks show displays content when playbook exists."""
+        playbooks_dir = tmp_path / "playbooks"
+        playbooks_dir.mkdir()
+        (playbooks_dir / "twitter.md").write_text("# Twitter Playbook\n\n## Login\nUse OAuth.")
+        config_path = tmp_path / "settings.yaml"
+        config_path.write_text(f"playbooks:\n  base_dir: {playbooks_dir}\n")
+        result = runner.invoke(cli, ["playbooks", "show", "twitter", "--config", str(config_path)])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Twitter Playbook" in result.output or "OAuth" in result.output
 
 
 class TestPersonasCommands:
-    def test_personas_validate_stub(self, runner):
+    def test_personas_validate(self, runner):
         result = runner.invoke(cli, ["personas", "validate"])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Persona Validation" in result.output
 
-    def test_personas_list_stub(self, runner):
+    def test_personas_list(self, runner):
         result = runner.invoke(cli, ["personas", "list"])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Configured Personas" in result.output
 
 
 class TestHistoryCommands:
-    def test_history_show_stub(self, runner):
-        result = runner.invoke(cli, ["history", "show"])
+    def test_history_show_reads_report_files(self, runner, tmp_path):
+        report_dir = tmp_path / "reports"
+        report_dir.mkdir(parents=True)
+        (report_dir / "cycle-1.json").write_text(
+            '{"cycle_id":"cycle-1","cycle_type":"execute","started_at":"2026-03-01T00:00:00Z",'
+            '"total_duration_seconds":4.2,"task_executed_id":"abc123","task_result":{"success":true}}'
+        )
+        result = runner.invoke(cli, ["history", "show", "--report-dir", str(report_dir)])
         assert result.exit_code == 0
-        assert "Not yet implemented" in result.output
+        assert "Recent Cycles" in result.output
+        assert "cycle-1" in result.output
 
     def test_history_show_limit_option(self, runner):
-        result = runner.invoke(cli, ["history", "show", "--limit", "25"])
+        result = runner.invoke(cli, ["history", "show", "--limit", "25", "--report-dir", "data/reports"])
         assert result.exit_code == 0
+
+
+class TestUatCommands:
+    def test_uat_checklist_renders_smoke_steps(self, runner):
+        result = runner.invoke(cli, ["uat", "checklist"])
+        assert result.exit_code == 0
+        assert "UAT Smoke Checklist" in result.output
+        assert "soren cycle run" in result.output
+        assert "soren history show --limit 5" in result.output
