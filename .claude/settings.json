@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr review:*)",
+      "Bash(just:*)",
+      "Bash(uv run:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "mcp__sequential-thinking__sequentialthinking"
+    ]
+  }
+}
