@@ -41,46 +41,104 @@ def _make_task(source_name="prolific", task_type="survey"):
     return task
 
 
-def _make_persona():
-    persona = MagicMock()
-    persona.id = "researcher-01"
-    persona.task_sources = []
-    return persona
-
-
 class TestHandleTabTransition:
     @pytest.mark.asyncio
-    async def test_detects_new_tab_after_triggers_new_tab_step(self):
-        """When a step has triggers_new_tab, executor should check for tab changes."""
+    async def test_detects_new_tab_and_logs_transition(self):
+        """When a new tab appears, handle_tab_transition logs the switch with host domain."""
         vm = MagicMock()
-        vm.get_tab_count = AsyncMock(return_value=2)
         vm.wait_for_new_tab = AsyncMock(return_value=True)
         vm.get_active_tab_url = AsyncMock(return_value="https://qualtrics.com/survey/123")
-        vm.find_tab_by_domain = AsyncMock(return_value=1)
-        vm.switch_to_tab = AsyncMock(return_value=True)
 
         ps = MagicMock()
         ps.resolve.return_value = "Host instructions for qualtrics"
-        ps.load_host.return_value = None
 
         executor = _make_executor(vm=vm, playbook_service=ps)
+        task = _make_task()
+        step_log: list = []
 
-        result = executor._detect_host_domain("https://qualtrics.com/survey/123")
-        assert result == "qualtrics.com"
+        await executor._handle_tab_transition(
+            task=task,
+            step_log=step_log,
+            steps_taken=5,
+            pre_tab_count=1,
+            platform_domain="prolific.com",
+        )
+
+        assert len(step_log) == 1
+        assert step_log[0]["action_type"] == "tab_switch"
+        assert step_log[0]["action_data"]["host_domain"] == "qualtrics.com"
+        ps.resolve.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_delegate_to_host_resolves_host_playbook(self):
-        """DELEGATE_TO_HOST should resolve host playbook via PlaybookService."""
+    async def test_no_transition_when_no_new_tab(self):
+        """When no new tab appears, nothing is logged."""
+        vm = MagicMock()
+        vm.wait_for_new_tab = AsyncMock(return_value=False)
+
+        executor = _make_executor(vm=vm)
+        step_log: list = []
+
+        await executor._handle_tab_transition(
+            task=_make_task(), step_log=step_log, steps_taken=5, pre_tab_count=1, platform_domain="prolific.com"
+        )
+
+        assert len(step_log) == 0
+
+    @pytest.mark.asyncio
+    async def test_ignores_same_domain_tab(self):
+        """If the new tab is on the same platform domain, skip DELEGATE_TO_HOST."""
+        vm = MagicMock()
+        vm.wait_for_new_tab = AsyncMock(return_value=True)
+        vm.get_active_tab_url = AsyncMock(return_value="https://prolific.com/other-page")
+
+        executor = _make_executor(vm=vm)
+        step_log: list = []
+
+        await executor._handle_tab_transition(
+            task=_make_task(), step_log=step_log, steps_taken=5, pre_tab_count=1, platform_domain="prolific.com"
+        )
+
+        assert len(step_log) == 0
+
+    @pytest.mark.asyncio
+    async def test_no_crash_when_pre_tab_count_is_none(self):
+        """When pre_tab_count is None (no computer), gracefully skip."""
+        executor = _make_executor()
+        step_log: list = []
+
+        await executor._handle_tab_transition(
+            task=_make_task(), step_log=step_log, steps_taken=5, pre_tab_count=None, platform_domain="prolific.com"
+        )
+
+        assert len(step_log) == 0
+
+    @pytest.mark.asyncio
+    async def test_handles_vm_error_gracefully(self):
+        """If VMManager raises during tab detection, no crash."""
+        vm = MagicMock()
+        vm.wait_for_new_tab = AsyncMock(side_effect=Exception("VM unreachable"))
+
+        executor = _make_executor(vm=vm)
+        step_log: list = []
+
+        await executor._handle_tab_transition(
+            task=_make_task(), step_log=step_log, steps_taken=5, pre_tab_count=1, platform_domain="prolific.com"
+        )
+
+        assert len(step_log) == 0
+
+
+class TestDelegateToHost:
+    @pytest.mark.asyncio
+    async def test_delegate_resolves_host_playbook(self):
+        """DELEGATE_TO_HOST resolves via PlaybookService with host_domain."""
         ps = MagicMock()
         ps.resolve.return_value = "Host-specific instructions"
 
         executor = _make_executor(playbook_service=ps)
+        task = _make_task()
 
-        content = executor._resolve_host_content(
-            source_name="prolific",
-            host_domain="qualtrics.com",
-            task_type="survey",
-        )
+        content = executor._load_playbook_content(task, host_domain="qualtrics.com")
 
         assert content == "Host-specific instructions"
         ps.resolve.assert_called_once_with(
@@ -91,24 +149,8 @@ class TestHandleTabTransition:
         )
 
     @pytest.mark.asyncio
-    async def test_delegate_to_host_falls_back_to_base(self):
-        """When no host playbook, falls back to base content."""
-        ps = MagicMock()
-        ps.resolve.return_value = "Base instructions only"
-
-        executor = _make_executor(playbook_service=ps)
-
-        content = executor._resolve_host_content(
-            source_name="prolific",
-            host_domain="unknown-host.com",
-            task_type="survey",
-        )
-
-        assert content is not None
-
-    @pytest.mark.asyncio
-    async def test_no_tab_steps_uses_standard_execution(self):
-        """When no tab steps exist, _load_playbook_content uses host_domain=None."""
+    async def test_standard_path_uses_no_host_domain(self):
+        """Without host_domain, _load_playbook_content passes None."""
         ps = MagicMock()
         ps.resolve.return_value = "Standard content"
         ps.load_site.return_value = None
@@ -118,7 +160,6 @@ class TestHandleTabTransition:
 
         executor._load_playbook_content(task)
 
-        # Standard path: host_domain=None
         ps.resolve.assert_called_once_with(
             source_name="prolific",
             host_domain=None,
@@ -141,14 +182,12 @@ class TestDomainExtraction:
 
 class TestStepBudgetSharing:
     def test_remaining_budget_calculation(self):
-        """Step budget should be shared with delegated execution."""
         executor = _make_executor()
         executor._step_budget = 50
         remaining = executor._remaining_budget(steps_taken=15)
         assert remaining == 35
 
     def test_remaining_budget_minimum(self):
-        """Remaining budget should never go below 1."""
         executor = _make_executor()
         executor._step_budget = 50
         remaining = executor._remaining_budget(steps_taken=55)

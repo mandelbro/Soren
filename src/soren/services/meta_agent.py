@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import psutil
 
@@ -271,6 +272,15 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
+                # Update host confidence on success (Task 020)
+                if self._playbook_service and task_result.step_log:
+                    host_domain = self._extract_host_domain(task_result.step_log)
+                    if host_domain:
+                        try:
+                            self._playbook_service.update_host_confidence(host_domain, success=True)
+                        except Exception:
+                            pass
+
                 # Store memory after successful execution (cycle-tier for reuse)
                 try:
                     memory_key = f"{task.source_name or 'default'}:{task.task_type or 'task'}:{task.persona_id or ''}"
@@ -302,6 +312,15 @@ class SorenMetaAgent:
                         )
                     except Exception:
                         pass
+
+                # Update host confidence on failure (Task 020)
+                if self._playbook_service and task_result and task_result.step_log:
+                    host_domain = self._extract_host_domain(task_result.step_log)
+                    if host_domain:
+                        try:
+                            self._playbook_service.update_host_confidence(host_domain, success=False)
+                        except Exception:
+                            pass
 
             # Log stuck condition and mark report
             if should_offer_training:
@@ -368,12 +387,14 @@ class SorenMetaAgent:
 
         return report
 
+    _TAB_STEP_TYPES = {"tab_switch", "new_tab", "open_tab"}
+
     @staticmethod
     def _extract_host_domain(step_log: list[dict[str, Any]]) -> str | None:
-        """Extract host domain from step log entries that contain tab-switch URLs."""
-        from urllib.parse import urlparse
-
+        """Extract host domain from tab-switch step log entries."""
         for entry in step_log:
+            if entry.get("action_type") not in SorenMetaAgent._TAB_STEP_TYPES:
+                continue
             data = entry.get("action_data", {})
             if not isinstance(data, dict):
                 continue
