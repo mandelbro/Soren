@@ -1,0 +1,215 @@
+# Base Playbook: Survey
+# Ships with Soren. Provides generic survey-completion patterns that apply
+# across all survey hosts (Qualtrics, SurveyMonkey, Google Forms, Typeform, etc.).
+# Host-specific and site-specific playbooks override these when available.
+
+task_type: survey
+version: 1
+
+patterns:
+  navigation:
+    description: >
+      Common navigation elements found in web-based surveys. Look for these
+      in order of likelihood when trying to advance through a survey.
+    advance_buttons:
+      - "Next"
+      - "Continue"
+      - "Next Page"
+      - ">>>"
+      - "→"
+      - "Next Question"
+      - "Proceed"
+      - "Forward"
+    submit_buttons:
+      - "Submit"
+      - "Finish"
+      - "Complete"
+      - "Done"
+      - "Submit Survey"
+      - "Finish Survey"
+      - "End Survey"
+      - "Submit Answers"
+    back_buttons:
+      - "Back"
+      - "Previous"
+      - "<<<"
+      - "←"
+      - "Go Back"
+    progress_indicators:
+      - "Progress bar (usually horizontal bar at top or bottom)"
+      - "Page counter (e.g., 'Page 3 of 10', '3/10')"
+      - "Percentage indicator (e.g., '30% complete')"
+      - "Step dots or breadcrumbs"
+    instructions: >
+      After answering all visible questions on a page, look for a Next or
+      Continue button. It is usually at the bottom-right of the page. If no
+      advance button is visible, scroll down -- some surveys place it below
+      the fold. Only click Submit/Finish when you are on the final page
+      (confirmed by progress indicator showing 100% or last page).
+
+  question_types:
+    description: >
+      Common survey question formats and how to interact with them.
+    multiple_choice:
+      identification: "Radio buttons or circles next to text options"
+      interaction: >
+        Click a single radio button to select one option. If the question
+        asks to select multiple, look for checkboxes instead of radio buttons.
+      common_labels:
+        - "Select one"
+        - "Choose one"
+        - "Pick the best answer"
+    multi_select:
+      identification: "Checkboxes (square) next to text options"
+      interaction: >
+        Click one or more checkboxes. Some questions have a minimum or maximum
+        selection count indicated in the instructions.
+      common_labels:
+        - "Select all that apply"
+        - "Choose all that apply"
+        - "Check all relevant options"
+    text_input:
+      identification: "Empty text field or text area, often with a placeholder or character count"
+      interaction: >
+        Click the field and type a response. For short-answer fields, provide
+        a concise answer (1-2 sentences). For long-answer text areas, provide
+        2-4 sentences. Watch for minimum character or word count requirements.
+      common_labels:
+        - "Please explain"
+        - "Describe in your own words"
+        - "Enter your response"
+        - "Other (please specify)"
+    likert_scale:
+      identification: "Horizontal row of radio buttons with endpoint labels (e.g., 'Strongly Disagree' to 'Strongly Agree')"
+      interaction: >
+        Click one radio button along the scale. Scales typically have 5 or 7
+        points. Labels may appear only at endpoints or at every point.
+      common_formats:
+        - "1-5 scale"
+        - "1-7 scale"
+        - "Strongly Disagree to Strongly Agree"
+        - "Very Unlikely to Very Likely"
+        - "Not at all to Extremely"
+    matrix:
+      identification: "Grid/table with rows (items) and columns (rating options)"
+      interaction: >
+        For each row, click one radio button in the corresponding column.
+        Scroll horizontally if the matrix extends beyond the viewport.
+        Some matrices require answering every row before advancing.
+      common_labels:
+        - "Rate each of the following"
+        - "For each statement, select your level of agreement"
+    dropdown:
+      identification: "A collapsed select menu showing one value with a down arrow"
+      interaction: >
+        Click the dropdown to expand options, then click the desired option.
+        For long lists, type the first letter to jump to matching options.
+      common_labels:
+        - "Select from the list"
+        - "Choose one"
+    slider:
+      identification: "A horizontal track with a draggable handle"
+      interaction: >
+        Click on the track at the desired position or drag the handle.
+        Look for numeric labels at the endpoints and current value display.
+    ranking:
+      identification: "A list of items that can be reordered by dragging"
+      interaction: >
+        Drag items up or down to reorder them by preference. Some surveys
+        use numbered dropdowns instead of drag-and-drop for ranking.
+      common_labels:
+        - "Rank the following in order of preference"
+        - "Drag to reorder"
+    image_selection:
+      identification: "Clickable images arranged in a grid or row"
+      interaction: >
+        Click on the image(s) that match the question criteria. Selected
+        images typically show a border highlight or checkmark overlay.
+
+  completion:
+    description: >
+      Signals that a survey has been completed successfully.
+    success_indicators:
+      - "Thank you for completing this survey"
+      - "Your response has been recorded"
+      - "Survey complete"
+      - "You have finished the survey"
+      - "Your submission has been received"
+      - "Thank you for your time"
+      - "Response submitted successfully"
+    completion_codes:
+      description: >
+        Many survey platforms (especially Prolific, MTurk) display a
+        completion code after the survey. This code must be copied and
+        entered back on the platform to receive payment.
+      identification:
+        - "Alphanumeric code displayed prominently (e.g., 'A1B2C3D4')"
+        - "Text saying 'Your completion code is:' or 'Confirmation code:'"
+        - "A code box with a copy button"
+      action: >
+        If a completion code is visible, copy it. You will need to paste
+        it on the survey platform after returning to the platform tab.
+    redirect_signals:
+      - "You will be redirected shortly"
+      - "Redirecting you back to [platform name]"
+      - "Click here to return to [platform name]"
+      - "This window will close automatically"
+    failure_indicators:
+      - "Sorry, this survey is now full"
+      - "This survey has been closed"
+      - "You are not eligible for this survey"
+      - "Survey quota has been reached"
+      - "Your session has expired"
+
+  consent_and_screening:
+    description: >
+      Many surveys begin with consent forms or screening questions before
+      the main survey content.
+    consent_patterns:
+      identification:
+        - "Informed consent form with 'I agree' / 'I consent' button"
+        - "Terms and conditions checkbox"
+        - "Age verification ('I am 18 or older')"
+      action: >
+        Read the consent text. If it is a standard research consent form,
+        click 'I agree' or 'I consent' to proceed. If it asks for specific
+        eligibility criteria, answer truthfully based on persona demographics.
+    screening_patterns:
+      identification:
+        - "Questions at the start asking about demographics or eligibility"
+        - "'Do you...' or 'Are you...' style yes/no questions"
+        - "Attention check questions ('Please select Strongly Agree')"
+      action: >
+        Answer screening questions based on persona demographics and traits.
+        For attention checks, follow the explicit instruction in the question
+        text (e.g., if it says 'Select Somewhat Disagree', select that option
+        regardless of the question content).
+
+  error_recovery:
+    description: >
+      Common error states during survey completion and how to handle them.
+    validation_errors:
+      identification:
+        - "Red text or border around a question"
+        - "'This question is required' or 'Please answer this question'"
+        - "'Please select at least N options'"
+      action: >
+        Scroll to the highlighted question and provide an answer. Required
+        questions must be answered before the page will advance.
+    session_timeout:
+      identification:
+        - "Session expired message"
+        - "Please log in again"
+        - "Your session has timed out"
+      action: >
+        The survey session has expired. Stop and report this as a failure --
+        do not attempt to restart the survey as progress may be lost.
+    page_load_errors:
+      identification:
+        - "Blank page or spinning loader for more than 10 seconds"
+        - "Error loading survey"
+        - "500 / Internal Server Error"
+      action: >
+        Wait up to 15 seconds for the page to load. If still blank or
+        errored, try refreshing the page once. If the error persists,
+        stop and report failure.
