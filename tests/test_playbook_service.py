@@ -247,5 +247,5 @@ def test_playbook_content_integrated_into_persona_context():
     task = Task(id="t1", dedup_key="k1", title="Test", source_name="prolific", task_type="survey")
     playbook = "## Login\nClick the top-right button."
     result = PersonaContext.build(persona, task, playbook_content=playbook)
-    assert "Service playbook instructions" in result
+    assert "Playbook instructions" in result
     assert "Click the top-right button" in result

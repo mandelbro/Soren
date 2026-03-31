@@ -89,7 +89,7 @@ class TestPersonaContextBuild:
         task = _make_task()
         playbook = "Navigate to dashboard. Click the first survey."
         result = PersonaContext.build(persona, task, playbook_content=playbook)
-        assert "Service playbook" in result
+        assert "Playbook instructions" in result
         assert "Navigate to dashboard" in result
         assert "Click the first survey" in result
 

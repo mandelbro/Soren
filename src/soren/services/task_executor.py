@@ -75,13 +75,7 @@ class TaskExecutor:
         verification_passed: bool | None = None
         correction_applied: str | None = None
 
-        playbook_content: str | None = None
-        if self._playbook_service and task.source_name:
-            raw = self._playbook_service.load(task.source_name)
-            if raw:
-                playbook_content = self._playbook_service.get_relevant_sections(
-                    raw, task.task_type or "survey"
-                )
+        playbook_content = self._load_playbook_content(task)
         persona_context = PersonaContext.build(
             persona,
             task,
@@ -170,6 +164,18 @@ class TaskExecutor:
             verification_passed=verification_passed,
             correction_applied=correction_applied,
         )
+
+    def _load_playbook_content(self, task: Task) -> str | None:
+        """Load cascading playbook content via resolve()."""
+        if not self._playbook_service or not task.source_name:
+            return None
+        content = self._playbook_service.resolve(
+            source_name=task.source_name,
+            host_domain=None,  # Phase 4 adds host domain detection
+            task_type=task.task_type or "survey",
+            flow_type="execution",
+        )
+        return content if content else None
 
     def _compose_memories(
         self,
