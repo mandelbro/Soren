@@ -264,17 +264,49 @@ class TaskExecutor:
             return None
         return site.flows.execution.get(task.task_type or "default") or site.flows.execution.get("default")
 
-    def _load_playbook_content(self, task: Task) -> str | None:
+    def _load_playbook_content(self, task: Task, host_domain: str | None = None) -> str | None:
         """Load cascading playbook content via resolve()."""
         if not self._playbook_service or not task.source_name:
             return None
         content = self._playbook_service.resolve(
             source_name=task.source_name,
-            host_domain=None,  # Phase 4 adds host domain detection
+            host_domain=host_domain,
             task_type=task.task_type or "survey",
             flow_type="execution",
         )
         return content if content else None
+
+    def _detect_host_domain(self, url: str) -> str | None:
+        """Extract domain from a URL for host playbook resolution."""
+        if not url:
+            return None
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            return parsed.hostname or None
+        except Exception:
+            return None
+
+    def _resolve_host_content(
+        self,
+        source_name: str,
+        host_domain: str,
+        task_type: str,
+    ) -> str | None:
+        """Resolve playbook content with host domain for DELEGATE_TO_HOST."""
+        if not self._playbook_service:
+            return None
+        return self._playbook_service.resolve(
+            source_name=source_name,
+            host_domain=host_domain,
+            task_type=task_type,
+            flow_type="execution",
+        )
+
+    def _remaining_budget(self, steps_taken: int) -> int:
+        """Calculate remaining step budget for delegated execution."""
+        return max(1, self._step_budget - steps_taken)
 
     def _compose_memories(
         self,

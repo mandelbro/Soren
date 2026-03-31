@@ -243,6 +243,25 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
+                # Auto-generate host playbook for new domains (Task 020)
+                if self._playbook_service and task_result.step_log:
+                    try:
+                        host_domain = self._extract_host_domain(task_result.step_log)
+                        auto_learn = getattr(self._settings.playbooks, "auto_learn_host", True)
+                        if host_domain and auto_learn:
+                            existing_host = self._playbook_service.load_host(host_domain)
+                            if existing_host is None:
+                                from soren.services.auto_playbook import auto_generate_host_playbook
+
+                                host_pb = await auto_generate_host_playbook(
+                                    llm=self._llm,
+                                    step_log=task_result.step_log,
+                                    host_domain=host_domain,
+                                )
+                                self._playbook_service.save_host(host_pb)
+                    except Exception:
+                        pass
+
                 # Update confidence on success
                 if self._playbook_service and task.source_name:
                     try:
@@ -348,6 +367,25 @@ class SorenMetaAgent:
                 pass
 
         return report
+
+    @staticmethod
+    def _extract_host_domain(step_log: list[dict[str, Any]]) -> str | None:
+        """Extract host domain from step log entries that contain tab-switch URLs."""
+        from urllib.parse import urlparse
+
+        for entry in step_log:
+            data = entry.get("action_data", {})
+            if not isinstance(data, dict):
+                continue
+            url = data.get("url") or data.get("tab_url") or ""
+            if url and "://" in url:
+                try:
+                    hostname = urlparse(url).hostname
+                    if hostname:
+                        return hostname
+                except Exception:
+                    continue
+        return None
 
     async def refresh_tasks(self, persona_filter: str | None = None) -> DiscoverySummary:
         """Discovery-only mode. No execution."""
