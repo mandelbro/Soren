@@ -7,6 +7,14 @@ dist/
 build/
 .eggs/
 
+# claude-flow
+.claude-flow/data
+.hive-mind/sessions
+.claude-flow/agents.json
+.claude-flow/hive-mind/state.json
+.claude-flow/data/*
+.claude-flow/sessions/*
+
 # Virtual environment
 .venv/
 venv/
