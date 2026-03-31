@@ -183,10 +183,14 @@ class SorenMetaAgent:
             memory_key = f"{task.source_name or 'default'}:{task.task_type or 'task'}:{task.persona_id or ''}"
             recalled = await self._memory_service.recall(key=memory_key, entry_type=None, limit=5, min_importance=0.0)
             memories = [e.to_prompt_line() for e in recalled]
+            should_offer_training = False
             try:
-                task_result = await self._executor.execute(task, persona, computer, memories=memories)
+                task_result, should_offer_training = await self._executor.execute_with_learning(
+                    task, persona, computer, memories=memories
+                )
             except Exception as e:
                 task_result = TaskResult(success=False, error=str(e))
+                should_offer_training = False
 
             # 6. Finalize
             if task_result and task_result.success:
@@ -207,6 +211,44 @@ class SorenMetaAgent:
                         )
                         if update.dry_run and update.preview:
                             report.playbook_preview = update.preview
+                    except Exception:
+                        pass
+
+                # Auto-generate site playbook from step log
+                if self._playbook_service and task.source_name:
+                    try:
+                        from soren.services.auto_playbook import auto_generate_site_playbook
+
+                        flow_type = "execution"
+                        auto_flow = await auto_generate_site_playbook(
+                            llm=self._llm,
+                            step_log=task_result.step_log or [],
+                            source_name=task.source_name,
+                            source_url=task.source_url or "",
+                            flow_type=flow_type,
+                            task_type=task.task_type,
+                        )
+                        # Only save if no human-trained playbook exists
+                        existing_site = self._playbook_service.load_site(task.source_name)
+                        existing_flow = None
+                        if existing_site and existing_site.flows.execution:
+                            existing_flow = existing_site.flows.execution.get(task.task_type or "default")
+                        if not existing_flow or existing_flow.verified_by != "human":
+                            self._playbook_service.save_flow(
+                                task.source_name,
+                                flow_type,
+                                auto_flow,
+                                task_type=task.task_type,
+                            )
+                    except Exception:
+                        pass
+
+                # Update confidence on success
+                if self._playbook_service and task.source_name:
+                    try:
+                        self._playbook_service.update_confidence(
+                            task.source_name, "execution", success=True, task_type=task.task_type
+                        )
                     except Exception:
                         pass
 
@@ -233,6 +275,18 @@ class SorenMetaAgent:
                     reason,
                     getattr(self._settings.scheduler, "retry_backoff_minutes", None),
                 )
+                # Update confidence on failure
+                if self._playbook_service and task.source_name:
+                    try:
+                        self._playbook_service.update_confidence(
+                            task.source_name, "execution", success=False, task_type=task.task_type
+                        )
+                    except Exception:
+                        pass
+
+            # Log stuck condition and mark report
+            if should_offer_training:
+                report.stuck_detected = True
 
             report.task_executed_id = task.id
             report.task_result = task_result

@@ -194,7 +194,7 @@ def test_cli_vm_status_displays_formatted_output():
 
     runner = CliRunner()
 
-    with patch("soren.cli.load_settings") as load:
+    with patch("soren.cli.vm.load_settings") as load:
         load.return_value.vm = VMConfig()
 
         with patch(
@@ -218,11 +218,11 @@ def test_cli_vm_stop_sends_request():
 
     runner = CliRunner()
 
-    with patch("soren.cli.load_settings") as load:
+    with patch("soren.cli.vm.load_settings") as load:
         load.return_value.vm = VMConfig()
 
         with patch(
-            "soren.cli.VMManager",
+            "soren.cli.vm.VMManager",
             spec=VMManager,
         ) as mock_vm_class:
             mock_manager = AsyncMock(spec=VMManager)
