@@ -183,7 +183,7 @@ This file completes Phase 2 with the execute_with_learning wrapper, auto-playboo
 
 - **Title**: Add confidence tracking and learning accumulation to SorenMetaAgent
 - **File**: src/soren/services/meta_agent.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren operator, I want the system to track confidence in its playbooks over multiple runs, so that proven playbooks are trusted more and failing playbooks are flagged for retraining.
@@ -255,7 +255,7 @@ This file completes Phase 2 with the execute_with_learning wrapper, auto-playboo
 
 - **Title**: Create TrainingSession orchestrator with callback-based I/O
 - **File**: src/soren/services/training_session.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want to manually guide the CUA agent through a site's login, discovery, or execution flow when autonomous learning fails, so that the agent can learn from my demonstrations.
@@ -347,7 +347,7 @@ This file completes Phase 2 with the execute_with_learning wrapper, auto-playboo
 
 - **Title**: Refactor cli.py into cli/ package
 - **File**: src/soren/cli/__init__.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren developer, I want the CLI code organized into a package with separate modules per command group, so that adding training commands does not push a single file past maintainable size.

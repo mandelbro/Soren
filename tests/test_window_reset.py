@@ -274,9 +274,9 @@ def test_vm_reset_displays_results():
     from soren.cli import cli
 
     runner = CliRunner()
-    with patch("soren.cli.load_settings") as load:
+    with patch("soren.cli.vm.load_settings") as load:
         load.return_value.vm = VMConfig()
-        with patch("soren.cli.VMManager") as mock_vm_cls:
+        with patch("soren.cli.vm.VMManager") as mock_vm_cls:
             mock_manager = AsyncMock()
             mock_manager.reset_browser_state = AsyncMock(
                 return_value=ResetResult(
