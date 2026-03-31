@@ -223,9 +223,14 @@ class TaskExecutor:
                         step_screenshot = screenshot_bytes
 
                 # Tab transition detection after each step
+                old_tab_count = pre_tab_count
                 pre_tab_count = await self._handle_tab_transition(
                     task, messages, step_log, steps_taken, pre_tab_count, platform_domain
                 )
+                # If a tab transition was detected (count changed), attempt platform return
+                # after the agent processes the host content in subsequent steps
+                if pre_tab_count is not None and old_tab_count is not None and pre_tab_count > old_tab_count:
+                    await self._handle_platform_return(platform_domain, step_log, steps_taken)
 
                 detector.record_step(step_screenshot, step_action)
                 if steps_taken >= effective_budget:
