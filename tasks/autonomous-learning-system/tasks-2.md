@@ -16,7 +16,7 @@ Phase 1b evolves the existing PlaybookService with YAML CRUD, cascading resoluti
 
 - **Title**: Evolve PlaybookService with YAML site playbook CRUD methods
 - **File**: src/soren/services/playbook_service.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren developer, I want the PlaybookService to support loading, saving, listing, and deleting structured YAML site playbooks, so that the training session and autonomous learner can persist and retrieve playbook data.
@@ -101,7 +101,7 @@ Phase 1b evolves the existing PlaybookService with YAML CRUD, cascading resoluti
 
 - **Title**: Add cascading resolution and prompt formatting to PlaybookService
 - **File**: src/soren/services/playbook_service.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator, I want the playbook system to automatically combine site, host, and base playbook instructions in priority order, so that the CUA agent receives the most specific guidance available without manual configuration.
@@ -188,7 +188,7 @@ Phase 1b evolves the existing PlaybookService with YAML CRUD, cascading resoluti
 
 - **Title**: Author base playbooks for email_reply and form task types
 - **File**: data/playbooks/base/email_reply.yaml
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 1
 
 - **User Story (business-facing)**: As a Soren operator running email or form tasks, I want built-in base playbooks for these task types so that the CUA agent has generic guidance even before any site-specific training.

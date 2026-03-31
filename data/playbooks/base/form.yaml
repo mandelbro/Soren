@@ -1,0 +1,160 @@
+# Base Playbook: Form Submission
+# Ships with Soren. Provides generic form-filling patterns that apply
+# across all web form types (contact forms, applications, registrations, etc.).
+# Host-specific and site-specific playbooks override these when available.
+
+task_type: form
+version: 1
+
+patterns:
+  navigation:
+    description: >
+      Common navigation elements found in web forms. Look for these
+      when locating and interacting with forms on a page.
+    form_identification:
+      - "Form element with input fields"
+      - "Multi-step form with progress indicator"
+      - "Embedded form in page content"
+      - "Modal or popup form"
+    scrolling:
+      - "Scroll down to see all form fields before filling"
+      - "Some fields may be below the fold"
+      - "Check for hidden sections that expand on click"
+    multi_page_navigation:
+      - "Next"
+      - "Continue"
+      - "Next Step"
+      - "Step 2 of 5"
+      - "Progress bar or breadcrumbs"
+    instructions: >
+      Locate the form on the page. Scroll through the entire form first
+      to understand all required fields before starting to fill them.
+      For multi-page forms, complete each page fully before advancing.
+
+  field_types:
+    description: >
+      Common form field types and how to interact with them.
+    text_input:
+      identification: "Single-line text field with label or placeholder"
+      interaction: >
+        Click the field and type the appropriate value. Watch for
+        character limits or format requirements (e.g., phone numbers,
+        zip codes). Clear any pre-filled placeholder text if needed.
+    textarea:
+      identification: "Multi-line text area, often resizable"
+      interaction: >
+        Click the area and type a response. Watch for minimum or
+        maximum character/word count requirements shown near the field.
+    dropdown:
+      identification: "Select menu showing one value with down arrow"
+      interaction: >
+        Click to expand the dropdown, then click the desired option.
+        For long lists, type the first letter to jump to matching options.
+        Some dropdowns may be searchable with a filter text box.
+    checkbox:
+      identification: "Square boxes next to labels, can select multiple"
+      interaction: >
+        Click one or more checkboxes as required. Required checkboxes
+        (e.g., terms and conditions) must be checked to submit.
+    radio_button:
+      identification: "Circular buttons next to labels, select only one"
+      interaction: >
+        Click one radio button from the group. Only one option can
+        be selected at a time within a radio button group.
+    file_upload:
+      identification: "Upload button, drag-and-drop zone, or 'Choose File'"
+      interaction: >
+        Click the upload button or drag a file into the drop zone.
+        Check accepted file formats and size limits before uploading.
+    date_picker:
+      identification: "Calendar widget, date field, or formatted date input"
+      interaction: >
+        Click the date field to open the calendar widget. Navigate
+        to the correct month/year, then click the target date. Some
+        date fields accept typed input in MM/DD/YYYY or similar format.
+    autocomplete:
+      identification: "Text field that shows suggestions while typing"
+      interaction: >
+        Start typing in the field and wait for suggestions to appear.
+        Click the matching suggestion from the dropdown list.
+
+  completion:
+    description: >
+      Signals that a form has been submitted successfully.
+    submit_buttons:
+      - "Submit"
+      - "Submit Form"
+      - "Send"
+      - "Register"
+      - "Sign Up"
+      - "Apply"
+      - "Save"
+      - "Confirm"
+      - "Complete"
+    success_indicators:
+      - "Thank you for your submission"
+      - "Form submitted successfully"
+      - "Your response has been recorded"
+      - "Registration complete"
+      - "Application received"
+      - "Confirmation email sent"
+      - "Your request has been submitted"
+    confirmation_page_signals:
+      - "Confirmation number or reference ID displayed"
+      - "Redirect to a thank-you page"
+      - "Success checkmark or green banner"
+      - "Summary of submitted information"
+    failure_indicators:
+      - "Submission failed"
+      - "Please try again"
+      - "An error occurred"
+      - "Form could not be submitted"
+      - "Server error"
+    instructions: >
+      After filling all required fields, click the Submit button.
+      Wait for the confirmation page or success message. If a
+      confirmation number is displayed, note it. Do not close
+      the tab until submission is confirmed.
+
+  error_recovery:
+    description: >
+      Common error states during form submission and how to handle them.
+    validation_errors:
+      identification:
+        - "Red text or border around a field"
+        - "'This field is required'"
+        - "'Please enter a valid email address'"
+        - "'Password must contain at least 8 characters'"
+        - "Error summary at top of form"
+      action: >
+        Scroll to the highlighted field(s) and correct the input.
+        Read the specific error message for format requirements.
+        Required fields must be filled before the form will submit.
+    captcha:
+      identification:
+        - "reCAPTCHA checkbox ('I am not a robot')"
+        - "Image selection challenge"
+        - "hCaptcha widget"
+      action: >
+        If a simple checkbox captcha appears, click it. If an image
+        challenge appears, stop and report failure -- image captchas
+        require human intervention.
+    session_timeout:
+      identification:
+        - "Session expired"
+        - "Please start over"
+        - "Your session has timed out"
+        - "Form data lost"
+      action: >
+        The form session has expired. Stop and report failure.
+        Do not attempt to re-submit as form data may be lost or
+        the submission may be duplicated.
+    required_fields:
+      identification:
+        - "Asterisk (*) next to field label"
+        - "'Required' text near field"
+        - "Red asterisk indicator"
+      action: >
+        Ensure all fields marked with an asterisk or 'Required' label
+        are filled before attempting to submit. Scroll through the
+        entire form to check for any missed required fields.

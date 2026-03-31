@@ -1,0 +1,129 @@
+# Base Playbook: Email Reply
+# Ships with Soren. Provides generic email reply patterns that apply
+# across all webmail providers (Gmail, Outlook, Yahoo Mail, ProtonMail, etc.).
+# Host-specific and site-specific playbooks override these when available.
+
+task_type: email_reply
+version: 1
+
+patterns:
+  navigation:
+    description: >
+      Common navigation elements found in webmail interfaces. Look for these
+      when navigating to the inbox and finding the target email.
+    inbox_buttons:
+      - "Inbox"
+      - "All Mail"
+      - "Primary"
+      - "Focused"
+      - "All Inboxes"
+    unread_filters:
+      - "Unread"
+      - "Unread messages"
+      - "Filter: Unread"
+      - "is:unread"
+    message_indicators:
+      - "Bold text (indicates unread message)"
+      - "Blue dot or circle next to message"
+      - "Envelope icon (sealed = unread)"
+      - "Message count badge on folder"
+    instructions: >
+      Navigate to the inbox. If filtering by unread, use the filter or
+      search bar. Click on the target email subject line to open it.
+      Read the full email content before composing a reply.
+
+  reply_composition:
+    description: >
+      Common reply interaction patterns across webmail providers.
+    reply_buttons:
+      - "Reply"
+      - "Reply All"
+      - "Reply to sender"
+      - "Arrow icon (curved left arrow)"
+    editor_elements:
+      - "Compose area / text body"
+      - "To: field (pre-filled in reply)"
+      - "Subject: field (pre-filled with 'Re:')"
+      - "Formatting toolbar (bold, italic, lists)"
+      - "Attachment button (paperclip icon)"
+    formatting_tips:
+      - "Click in the compose area to start typing"
+      - "The cursor usually appears above the quoted original message"
+      - "Use the formatting toolbar for bold, italic, or lists if needed"
+      - "Keep the quoted original message below your reply"
+    instructions: >
+      Click the Reply button (or Reply All if the task requires it).
+      The reply editor will open with the To field pre-filled and the
+      subject prefixed with 'Re:'. Type your response in the compose
+      area above the quoted original message. Review before sending.
+
+  completion:
+    description: >
+      Signals that an email reply has been sent successfully.
+    send_buttons:
+      - "Send"
+      - "Send message"
+      - "Send reply"
+      - "Paper plane icon"
+    success_indicators:
+      - "Message sent"
+      - "Your message has been sent"
+      - "Reply sent"
+      - "Email sent successfully"
+      - "Message moved to Sent folder"
+      - "Undo Send (brief popup confirming send)"
+    draft_save_signals:
+      - "Draft saved"
+      - "Saved to Drafts"
+      - "Auto-saved"
+    failure_indicators:
+      - "Message could not be sent"
+      - "Delivery failed"
+      - "Invalid recipient"
+      - "Send error"
+      - "Please try again"
+    instructions: >
+      Click the Send button to send your reply. After clicking Send,
+      look for a confirmation message or the brief "Undo Send" popup.
+      If the message fails to send, check the recipient address and
+      try again. Do not close the tab until send confirmation appears.
+
+  error_recovery:
+    description: >
+      Common error states during email reply and how to handle them.
+    session_timeout:
+      identification:
+        - "Session expired"
+        - "Please sign in again"
+        - "Your session has timed out"
+      action: >
+        The email session has expired. Stop and report this as a failure --
+        do not attempt to re-login as unsent draft content may be lost.
+    attachment_issues:
+      identification:
+        - "File too large"
+        - "Attachment failed"
+        - "Unable to attach file"
+        - "Maximum attachment size exceeded"
+      action: >
+        If the task requires an attachment and it fails, report the failure.
+        Do not attempt to send without the required attachment.
+    send_failures:
+      identification:
+        - "Message could not be delivered"
+        - "Recipient address rejected"
+        - "SMTP error"
+        - "Mail delivery subsystem error"
+      action: >
+        Check the recipient email address for typos. If the address appears
+        correct, try sending again once. If it fails a second time, stop
+        and report failure.
+    compose_errors:
+      identification:
+        - "Blank compose window"
+        - "Editor not loading"
+        - "Rich text editor unavailable"
+      action: >
+        If the compose editor fails to load, try refreshing the page once.
+        If still broken, try switching to plain text mode if available.
+        Otherwise, stop and report failure.
