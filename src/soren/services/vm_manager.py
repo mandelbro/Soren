@@ -327,6 +327,76 @@ end tell
             warnings=warnings,
         )
 
+    # --- Tab introspection (Task 018) ---
+
+    async def get_tab_count(self) -> int:
+        """Count open Safari tabs in window 1. Returns 0 on error."""
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        try:
+            raw = await self._run_osascript('tell application "Safari" to count of tabs of window 1')
+            return int(raw) if raw else 0
+        except Exception:
+            return 0
+
+    async def get_active_tab_url(self) -> str:
+        """URL of the currently active Safari tab. Returns empty string on error."""
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        try:
+            return await self._run_osascript('tell application "Safari" to URL of current tab of window 1')
+        except Exception:
+            return ""
+
+    async def switch_to_tab(self, index: int) -> bool:
+        """Switch to Safari tab by 1-based index. Returns True on success."""
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        try:
+            await self._run_osascript(
+                f'tell application "Safari" to set current tab of window 1 to tab {index} of window 1'
+            )
+            return True
+        except Exception:
+            return False
+
+    async def find_tab_by_domain(self, domain: str) -> int | None:
+        """Find Safari tab whose URL contains the given domain. Returns 1-based index or None."""
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        # Sanitize domain to prevent AppleScript injection via double-quotes
+        safe_domain = domain.replace('"', "").replace("\\", "")
+        script = (
+            f'tell application "Safari"\n'
+            f"  set tabCount to count of tabs of window 1\n"
+            f"  repeat with i from 1 to tabCount\n"
+            f"    set tabURL to URL of tab i of window 1\n"
+            f'    if tabURL contains "{safe_domain}" then\n'
+            f"      return i\n"
+            f"    end if\n"
+            f"  end repeat\n"
+            f"  return 0\n"
+            f"end tell"
+        )
+        try:
+            raw = await self._run_osascript(script)
+            idx = int(raw) if raw else 0
+            return idx if idx > 0 else None
+        except Exception:
+            return None
+
+    async def wait_for_new_tab(self, initial_count: int, timeout_s: float = 5.0) -> bool:
+        """Poll get_tab_count() until it exceeds initial_count or timeout. 0.5s interval."""
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        start = time.monotonic()
+        while time.monotonic() - start < timeout_s:
+            current = await self.get_tab_count()
+            if current > initial_count:
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
     # --- VM recreation ---
 
     def _should_recreate(self) -> bool:

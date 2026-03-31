@@ -164,7 +164,7 @@ Phase 3 concludes with the CLI train command and playbook management commands. P
 
 - **Title**: Add tab introspection methods to VMManager
 - **File**: src/soren/services/vm_manager.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator running multi-tab surveys, I want the VM manager to detect and switch between browser tabs, so that the agent can handle survey platforms that open tasks in new tabs.
