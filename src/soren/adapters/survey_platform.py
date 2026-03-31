@@ -20,6 +20,12 @@ class SurveyPlatformAdapter:
     def navigation_prompt(self, source: TaskSource, persona: Persona) -> str:
         """Instructions for UI-TARS to reach survey dashboard (~25 lines)."""
         url = source.url or "the survey platform dashboard"
+        hint_section = ""
+        if source.discovery_hint:
+            hint_section = f"""
+SITE HINT: {source.discovery_hint}
+Use the above hint to guide your navigation on this specific site.
+"""
         return f"""Navigate to {url}.
 
 1. LOGIN: If you see a login page, use the stored credentials for this service.
@@ -27,7 +33,7 @@ class SurveyPlatformAdapter:
    {DISCOVERY_READY} (we cannot proceed; human intervention required).
 
 2. COOKIE BANNERS: Dismiss any cookie consent or banner overlays (Accept, I Agree, etc.) so the main content is visible.
-
+{hint_section}
 3. DASHBOARD: Navigate to the survey/task listing page (dashboard, studies, or
    available tasks). Ensure you are on the page that shows available surveys.
 

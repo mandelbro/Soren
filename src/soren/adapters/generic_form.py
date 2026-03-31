@@ -20,13 +20,19 @@ class GenericFormAdapter:
     def navigation_prompt(self, source: TaskSource, persona: Persona) -> str:
         """Instructions for UI-TARS to reach form page (~15 lines)."""
         url = source.url or "the target URL"
+        hint_section = ""
+        if source.discovery_hint:
+            hint_section = f"""
+SITE HINT: {source.discovery_hint}
+Use the above hint to guide your navigation on this specific site.
+"""
         return f"""Navigate to {url}.
 
 1. LOGIN: If you see a login page, use the stored credentials for this service.
    If 2FA or CAPTCHA appears, STOP and output exactly: {DISCOVERY_READY}
 
 2. COOKIE BANNERS: Dismiss any cookie consent overlays.
-
+{hint_section}
 3. FORM: Look for input fields, dropdowns, text areas, checkboxes, submit buttons.
    If the form requires scrolling to see all fields, scroll down.
 
