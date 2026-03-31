@@ -24,7 +24,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dev tools only
-        run: uv pip install ruff>=0.4
+        run: uv pip install --system ruff>=0.4
 
       - name: Lint
         run: ruff check src/ tests/
