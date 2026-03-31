@@ -318,6 +318,20 @@ class PlaybookService:
 
         self.save_site(site)
 
+    def update_host_confidence(self, host_domain: str, success: bool) -> None:
+        """Update confidence for a host playbook after execution."""
+        host = self.load_host(host_domain)
+        if host is None:
+            return
+
+        if success:
+            host.confidence = min(1.0, host.confidence + 0.15)
+            host.verified_at = datetime.now(UTC)
+        else:
+            host.confidence = max(0.0, host.confidence - 0.2)
+
+        self.save_host(host)
+
     def load(self, service_name: str) -> str | None:
         """Read playbook content for a service. Returns None if file does not exist.
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from soren.models.persona import Persona
 from soren.models.session import TaskResult
@@ -22,6 +24,8 @@ if TYPE_CHECKING:
     from soren.services.llm_service import LLMService
     from soren.services.playbook_service import PlaybookService
     from soren.services.vm_manager import VMManager
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_STEP_BUDGET = 50
 DEFAULT_VLM_MODEL = "mlx/mlx-community/UI-TARS-1.5-7B-6bit"
@@ -152,7 +156,7 @@ class TaskExecutor:
         computer: Any,
         memories: list[str] | None = None,
     ) -> tuple[TaskResult, bool]:
-        """Execute with stuck detection. Returns (result, should_offer_training)."""
+        """Execute with stuck detection and tab-aware flow. Returns (result, should_offer_training)."""
         from soren.patches import apply_all
 
         apply_all()
@@ -179,7 +183,17 @@ class TaskExecutor:
         verification_passed: bool | None = None
         correction_applied: str | None = None
 
+        # Tab-aware state
+        platform_domain = self._detect_host_domain(task.source_url or "")
+        pre_tab_count: int | None = None
+
         try:
+            # Record initial tab count for tab transition detection
+            try:
+                pre_tab_count = await self._vm.get_tab_count()
+            except Exception:
+                pre_tab_count = None
+
             agent = ComputerAgent(
                 model=self._vlm_model,
                 tools=[computer],
@@ -207,6 +221,16 @@ class TaskExecutor:
                     if screenshot_bytes:
                         last_screenshot_bytes = screenshot_bytes
                         step_screenshot = screenshot_bytes
+
+                # Tab transition detection after each step
+                old_tab_count = pre_tab_count
+                pre_tab_count = await self._handle_tab_transition(
+                    task, messages, step_log, steps_taken, pre_tab_count, platform_domain
+                )
+                # If a tab transition was detected (count changed), attempt platform return
+                # after the agent processes the host content in subsequent steps
+                if pre_tab_count is not None and old_tab_count is not None and pre_tab_count > old_tab_count:
+                    await self._handle_platform_return(platform_domain, step_log, steps_taken)
 
                 detector.record_step(step_screenshot, step_action)
                 if steps_taken >= effective_budget:
@@ -255,6 +279,96 @@ class TaskExecutor:
 
         return task_result, stuck
 
+    async def _handle_tab_transition(
+        self,
+        task: Task,
+        messages: list[dict[str, Any]],
+        step_log: list[dict[str, Any]],
+        steps_taken: int,
+        pre_tab_count: int | None,
+        platform_domain: str | None,
+    ) -> int | None:
+        """Detect and handle tab transitions during execution.
+
+        Returns the updated tab count (to prevent repeated triggers), or the
+        original pre_tab_count if no transition was detected.
+        """
+        if pre_tab_count is None:
+            return None
+
+        try:
+            new_tab_detected = await self._vm.wait_for_new_tab(pre_tab_count, timeout_s=1.0)
+            if not new_tab_detected:
+                return pre_tab_count
+
+            # New tab opened — get URL and extract host domain
+            tab_url = await self._vm.get_active_tab_url()
+            host_domain = self._detect_host_domain(tab_url)
+            if not host_domain or host_domain == platform_domain:
+                # Same domain or can't parse — update count but skip delegation
+                try:
+                    return await self._vm.get_tab_count()
+                except Exception:
+                    return pre_tab_count
+
+            # Log the tab transition
+            step_log.append(
+                {
+                    "step": steps_taken,
+                    "action_type": "tab_switch",
+                    "action_data": {"url": tab_url, "host_domain": host_domain},
+                    "vlm_reasoning": f"DELEGATE_TO_HOST: new tab detected at {host_domain}",
+                }
+            )
+
+            # Resolve host-specific playbook content and inject into agent context
+            host_content = self._load_playbook_content(task, host_domain=host_domain)
+            if host_content:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"DELEGATE_TO_HOST: You are now on {host_domain}. "
+                            f"Follow these host-specific instructions:\n\n{host_content}"
+                        ),
+                    }
+                )
+                logger.info("Injected host playbook content for %s", host_domain)
+
+            # Update tab count to prevent repeated triggers
+            return await self._vm.get_tab_count()
+
+        except Exception:
+            logger.debug("Tab transition handling failed", exc_info=True)
+            return pre_tab_count
+
+    async def _handle_platform_return(
+        self,
+        platform_domain: str | None,
+        step_log: list[dict[str, Any]],
+        steps_taken: int,
+    ) -> None:
+        """Switch back to the platform tab after delegated host execution."""
+        if not platform_domain:
+            return
+        try:
+            tab_idx = await self._vm.find_tab_by_domain(platform_domain)
+            if tab_idx is not None:
+                switched = await self._vm.switch_to_tab(tab_idx)
+                if switched:
+                    step_log.append(
+                        {
+                            "step": steps_taken,
+                            "action_type": "tab_switch",
+                            "action_data": {"domain": platform_domain, "tab_index": tab_idx},
+                            "vlm_reasoning": f"returns_to_platform: switched back to {platform_domain}",
+                        }
+                    )
+            else:
+                logger.warning("Platform tab for %s not found; staying on current tab", platform_domain)
+        except Exception:
+            logger.debug("Platform return failed", exc_info=True)
+
     def _get_flow_playbook(self, task: Task) -> Any:
         """Load the FlowPlaybook for a task's source, or None if unavailable."""
         if not self._playbook_service or not task.source_name:
@@ -264,17 +378,31 @@ class TaskExecutor:
             return None
         return site.flows.execution.get(task.task_type or "default") or site.flows.execution.get("default")
 
-    def _load_playbook_content(self, task: Task) -> str | None:
+    def _load_playbook_content(self, task: Task, host_domain: str | None = None) -> str | None:
         """Load cascading playbook content via resolve()."""
         if not self._playbook_service or not task.source_name:
             return None
         content = self._playbook_service.resolve(
             source_name=task.source_name,
-            host_domain=None,  # Phase 4 adds host domain detection
+            host_domain=host_domain,
             task_type=task.task_type or "survey",
             flow_type="execution",
         )
         return content if content else None
+
+    def _detect_host_domain(self, url: str) -> str | None:
+        """Extract domain from a URL for host playbook resolution."""
+        if not url:
+            return None
+        try:
+            parsed = urlparse(url)
+            return parsed.hostname or None
+        except Exception:
+            return None
+
+    def _remaining_budget(self, steps_taken: int) -> int:
+        """Calculate remaining step budget for delegated execution."""
+        return max(1, self._step_budget - steps_taken)
 
     def _compose_memories(
         self,

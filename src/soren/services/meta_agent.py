@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import psutil
 
@@ -243,6 +244,25 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
+                # Auto-generate host playbook for new domains (Task 020)
+                if self._playbook_service and task_result.step_log:
+                    try:
+                        host_domain = self._extract_host_domain(task_result.step_log)
+                        auto_learn = getattr(self._settings.playbooks, "auto_learn_host", True)
+                        if host_domain and auto_learn:
+                            existing_host = self._playbook_service.load_host(host_domain)
+                            if existing_host is None:
+                                from soren.services.auto_playbook import auto_generate_host_playbook
+
+                                host_pb = await auto_generate_host_playbook(
+                                    llm=self._llm,
+                                    step_log=task_result.step_log,
+                                    host_domain=host_domain,
+                                )
+                                self._playbook_service.save_host(host_pb)
+                    except Exception:
+                        pass
+
                 # Update confidence on success
                 if self._playbook_service and task.source_name:
                     try:
@@ -251,6 +271,15 @@ class SorenMetaAgent:
                         )
                     except Exception:
                         pass
+
+                # Update host confidence on success (Task 020)
+                if self._playbook_service and task_result.step_log:
+                    host_domain = self._extract_host_domain(task_result.step_log)
+                    if host_domain:
+                        try:
+                            self._playbook_service.update_host_confidence(host_domain, success=True)
+                        except Exception:
+                            pass
 
                 # Store memory after successful execution (cycle-tier for reuse)
                 try:
@@ -283,6 +312,15 @@ class SorenMetaAgent:
                         )
                     except Exception:
                         pass
+
+                # Update host confidence on failure (Task 020)
+                if self._playbook_service and task_result and task_result.step_log:
+                    host_domain = self._extract_host_domain(task_result.step_log)
+                    if host_domain:
+                        try:
+                            self._playbook_service.update_host_confidence(host_domain, success=False)
+                        except Exception:
+                            pass
 
             # Log stuck condition and mark report
             if should_offer_training:
@@ -348,6 +386,27 @@ class SorenMetaAgent:
                 pass
 
         return report
+
+    _TAB_STEP_TYPES = {"tab_switch", "new_tab", "open_tab"}
+
+    @staticmethod
+    def _extract_host_domain(step_log: list[dict[str, Any]]) -> str | None:
+        """Extract host domain from tab-switch step log entries."""
+        for entry in step_log:
+            if entry.get("action_type") not in SorenMetaAgent._TAB_STEP_TYPES:
+                continue
+            data = entry.get("action_data", {})
+            if not isinstance(data, dict):
+                continue
+            url = data.get("url") or data.get("tab_url") or ""
+            if url and "://" in url:
+                try:
+                    hostname = urlparse(url).hostname
+                    if hostname:
+                        return hostname
+                except Exception:
+                    continue
+        return None
 
     async def refresh_tasks(self, persona_filter: str | None = None) -> DiscoverySummary:
         """Discovery-only mode. No execution."""

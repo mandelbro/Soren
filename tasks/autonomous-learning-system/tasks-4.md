@@ -238,7 +238,7 @@ Phase 3 concludes with the CLI train command and playbook management commands. P
 
 - **Title**: Implement tab-aware execution flow with DELEGATE_TO_HOST
 - **File**: src/soren/services/task_executor.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want the task execution loop to handle survey platforms that open tasks in new browser tabs, so that the agent can complete surveys on external hosts and return to the platform.
@@ -309,7 +309,7 @@ Phase 3 concludes with the CLI train command and playbook management commands. P
 
 - **Title**: Add host playbook integration and auto-learning into execution lifecycle
 - **File**: src/soren/services/playbook_service.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator, I want host playbooks to be automatically generated when the agent successfully completes a survey on a new host domain, so that future surveys on the same host benefit from learned navigation patterns.
