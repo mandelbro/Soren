@@ -364,12 +364,14 @@ end tell
         """Find Safari tab whose URL contains the given domain. Returns 1-based index or None."""
         if not self._computer:
             raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        # Sanitize domain to prevent AppleScript injection via double-quotes
+        safe_domain = domain.replace('"', "").replace("\\", "")
         script = (
             f'tell application "Safari"\n'
             f"  set tabCount to count of tabs of window 1\n"
             f"  repeat with i from 1 to tabCount\n"
             f"    set tabURL to URL of tab i of window 1\n"
-            f'    if tabURL contains "{domain}" then\n'
+            f'    if tabURL contains "{safe_domain}" then\n'
             f"      return i\n"
             f"    end if\n"
             f"  end repeat\n"
@@ -385,8 +387,8 @@ end tell
 
     async def wait_for_new_tab(self, initial_count: int, timeout_s: float = 5.0) -> bool:
         """Poll get_tab_count() until it exceeds initial_count or timeout. 0.5s interval."""
-        import time
-
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
         start = time.monotonic()
         while time.monotonic() - start < timeout_s:
             current = await self.get_tab_count()

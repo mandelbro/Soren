@@ -97,6 +97,16 @@ class TestFindTabByDomain:
             result = await vm_manager.find_tab_by_domain("qualtrics.com")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_sanitizes_domain_with_double_quotes(self, vm_manager):
+        """Domain containing double-quotes is sanitized to prevent AppleScript injection."""
+        with patch.object(vm_manager, "_run_osascript", new_callable=AsyncMock, return_value="0") as mock_os:
+            await vm_manager.find_tab_by_domain('evil.com" & do shell script "rm -rf /')
+        # The injected double-quote should be stripped
+        script_arg = mock_os.call_args[0][0]
+        assert '"evil.com & do shell script rm -rf /' in script_arg
+        assert '"evil.com"' not in script_arg or "do shell script" not in script_arg.split('"evil.com')[0]
+
 
 class TestWaitForNewTab:
     @pytest.mark.asyncio
