@@ -366,15 +366,15 @@ end tell
             raise RuntimeError("Computer not connected. Call connect_computer() first.")
         script = (
             f'tell application "Safari"\n'
-            f'  set tabCount to count of tabs of window 1\n'
-            f'  repeat with i from 1 to tabCount\n'
-            f'    set tabURL to URL of tab i of window 1\n'
+            f"  set tabCount to count of tabs of window 1\n"
+            f"  repeat with i from 1 to tabCount\n"
+            f"    set tabURL to URL of tab i of window 1\n"
             f'    if tabURL contains "{domain}" then\n'
-            f'      return i\n'
-            f'    end if\n'
-            f'  end repeat\n'
-            f'  return 0\n'
-            f'end tell'
+            f"      return i\n"
+            f"    end if\n"
+            f"  end repeat\n"
+            f"  return 0\n"
+            f"end tell"
         )
         try:
             raw = await self._run_osascript(script)
