@@ -16,7 +16,7 @@ Phase 3 concludes with the CLI train command and playbook management commands. P
 
 - **Title**: Create CLI train command with Rich interactive loop
 - **File**: src/soren/cli/train.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want a `soren train <source>` CLI command that guides me through recording playbook steps with Rich terminal UI, so that I can teach the agent how to navigate unfamiliar sites.
@@ -101,7 +101,7 @@ Phase 3 concludes with the CLI train command and playbook management commands. P
 
 - **Title**: Add playbook management CLI commands (list, show, delete)
 - **File**: src/soren/cli/train.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren operator, I want CLI commands to list, inspect, and delete playbooks so that I can manage the agent's learned knowledge and diagnose playbook issues.
