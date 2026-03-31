@@ -100,5 +100,6 @@ class CycleReport(BaseModel):
     memory_metrics: dict[str, Any] | None = None
     screenshots: list[str] = Field(default_factory=list)
     playbook_preview: str | None = None
+    stuck_detected: bool = False
 
     model_config = {"from_attributes": True, "extra": "ignore"}

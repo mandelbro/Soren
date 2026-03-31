@@ -85,7 +85,9 @@ def _make_agent(
     discovery.discover = AsyncMock(return_value=discovery_tasks or [])
 
     executor = MagicMock()
-    executor.execute = AsyncMock(return_value=executor_result or TaskResult(success=True, steps_taken=5))
+    default_result = executor_result or TaskResult(success=True, steps_taken=5)
+    executor.execute = AsyncMock(return_value=default_result)
+    executor.execute_with_learning = AsyncMock(return_value=(default_result, False))
 
     def load_personas():
         return [_make_persona()]
@@ -136,15 +138,15 @@ async def test_run_cycle_selects_highest_priority_task():
     agent, mocks = _make_agent(backlog_tasks=[t1, t2])
     report = await agent.run_cycle()
     assert report.task_executed_id in ("t1", "t2")
-    mocks["executor"].execute.assert_called_once()
+    mocks["executor"].execute_with_learning.assert_called_once()
 
 
 async def test_run_cycle_calls_executor_with_task_and_persona():
-    """run_cycle() calls executor.execute() with correct task and persona."""
+    """run_cycle() calls executor.execute_with_learning() with correct task and persona."""
     task = _make_task()
     agent, mocks = _make_agent(backlog_tasks=[task])
     await agent.run_cycle()
-    call_args = mocks["executor"].execute.call_args
+    call_args = mocks["executor"].execute_with_learning.call_args
     assert call_args[0][0].id == task.id
     assert call_args[0][1].id == "p1"
 
@@ -189,7 +191,7 @@ async def test_run_cycle_always_resets_browser():
     """run_cycle() always resets browser state (even on error)."""
     task = _make_task()
     agent, mocks = _make_agent(backlog_tasks=[task])
-    mocks["executor"].execute.side_effect = RuntimeError("crash")
+    mocks["executor"].execute_with_learning.side_effect = RuntimeError("crash")
     await agent.run_cycle()
     mocks["vm"].reset_browser_state.assert_called()
 
@@ -227,7 +229,7 @@ async def test_run_cycle_handles_executor_crash():
     """run_cycle() handles executor crash without crashing cycle."""
     task = _make_task()
     agent, mocks = _make_agent(backlog_tasks=[task])
-    mocks["executor"].execute.side_effect = RuntimeError("executor crash")
+    mocks["executor"].execute_with_learning.side_effect = RuntimeError("executor crash")
     report = await agent.run_cycle()
     assert report.task_result is not None
     assert report.task_result.success is False
@@ -240,7 +242,7 @@ async def test_run_cycle_handles_discovery_failure_gracefully():
     mocks["discovery"].discover.return_value = []
     report = await agent.run_cycle()
     assert report.task_executed_id is None
-    mocks["executor"].execute.assert_not_called()
+    mocks["executor"].execute_with_learning.assert_not_called()
 
 
 async def test_run_cycle_aborts_when_memory_over_threshold():
@@ -262,4 +264,4 @@ async def test_refresh_tasks_runs_discovery_only():
     mocks["discovery"].discover.return_value = [discovered]
     summary = await agent.refresh_tasks()
     assert summary.total_inserted >= 0
-    mocks["executor"].execute.assert_not_called()
+    mocks["executor"].execute_with_learning.assert_not_called()

@@ -56,7 +56,7 @@ class TestCycleCommands:
         """cycle run executes (mocked to avoid VM/LLM)."""
         with (
             patch("soren.services.task_backlog.get_default_db_path", return_value=tmp_path / "soren.db"),
-            patch("soren.cli.VMManager") as mock_vm_cls,
+            patch("soren.services.vm_manager.VMManager") as mock_vm_cls,
             patch("soren.services.meta_agent.SorenMetaAgent") as mock_agent_cls,
         ):
             from soren.models.session import CycleReport
@@ -89,7 +89,7 @@ class TestDiscoverCommands:
     def test_discover_refresh_runs(self, runner, tmp_path):
         with (
             patch("soren.services.task_backlog.get_default_db_path", return_value=tmp_path / "soren.db"),
-            patch("soren.cli.VMManager") as mock_vm_cls,
+            patch("soren.services.vm_manager.VMManager") as mock_vm_cls,
             patch("soren.services.task_discovery.TaskDiscovery") as mock_discovery_cls,
         ):
             mock_vm = AsyncMock()
@@ -106,7 +106,7 @@ class TestDiscoverCommands:
     def test_discover_refresh_persona_option(self, runner, tmp_path):
         with (
             patch("soren.services.task_backlog.get_default_db_path", return_value=tmp_path / "soren.db"),
-            patch("soren.cli.VMManager") as mock_vm_cls,
+            patch("soren.services.vm_manager.VMManager") as mock_vm_cls,
             patch("soren.services.task_discovery.TaskDiscovery") as mock_discovery_cls,
         ):
             mock_vm = AsyncMock()
@@ -176,7 +176,7 @@ class TestVMCommands:
         mock_prepare.assert_called_once()
 
     def test_vm_status_displays_table(self, runner):
-        with patch("soren.cli.load_settings") as load:
+        with patch("soren.cli.vm.load_settings") as load:
             load.return_value.vm = VMConfig()
             with patch(
                 "soren.services.vm_manager.LumeClient._request",
@@ -188,9 +188,9 @@ class TestVMCommands:
         assert "Lume VMs" in result.output or "soren-vm" in result.output
 
     def test_vm_stop_requires_confirmation(self, runner):
-        with patch("soren.cli.load_settings") as load:
+        with patch("soren.cli.vm.load_settings") as load:
             load.return_value.vm = VMConfig()
-            with patch("soren.cli.VMManager") as mock_vm:
+            with patch("soren.cli.vm.VMManager") as mock_vm:
                 mock_manager = AsyncMock()
                 mock_manager.is_running = AsyncMock(return_value=True)
                 mock_manager.stop = AsyncMock()
@@ -200,9 +200,9 @@ class TestVMCommands:
         assert "stopped" in result.output.lower() or mock_manager.stop.called
 
     def test_vm_reset_displays_results(self, runner):
-        with patch("soren.cli.load_settings") as load:
+        with patch("soren.cli.vm.load_settings") as load:
             load.return_value.vm = VMConfig()
-            with patch("soren.cli.VMManager") as mock_vm_cls:
+            with patch("soren.cli.vm.VMManager") as mock_vm_cls:
                 from soren.models.reset import ResetResult
 
                 mock_manager = AsyncMock()
