@@ -20,17 +20,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dev tools only
-        run: uv pip install --system ruff>=0.4
-
       - name: Lint
-        run: ruff check src/ tests/
+        run: uvx ruff@0.9.10 check src/ tests/
 
       - name: Format check
-        run: ruff format --check src/ tests/
+        run: uvx ruff@0.9.10 format --check src/ tests/
 
   test:
     # Tests require macOS for Apple Silicon deps (MLX, CUA SDK)
