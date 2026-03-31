@@ -77,9 +77,8 @@ def train():
 @click.argument("source")
 @click.option("--flow", type=click.Choice(["login", "discovery", "execution"]), default=None, help="Flow type to train")
 @click.option("--task-type", default=None, help="Task type (for execution flows)")
-@click.option("--from-step", type=int, default=None, help="Resume from step number")
 @click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
-def train_run(source: str, flow: str | None, task_type: str | None, from_step: int | None, config: str | None) -> None:
+def train_run(source: str, flow: str | None, task_type: str | None, config: str | None) -> None:
     """Start an interactive training session for SOURCE."""
 
     async def _run() -> None:

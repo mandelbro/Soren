@@ -103,28 +103,6 @@ class TestTrainRunCommand:
         call_kwargs = mock_session_cls.call_args
         assert call_kwargs.kwargs["flow_type"] == "discovery"
 
-    def test_train_run_with_from_step(self, runner):
-        """--from-step is accepted without error."""
-        from soren.models.site_playbook import FlowPlaybook
-
-        mock_flow = FlowPlaybook(steps=[], confidence=0.5, verified_by="human")
-
-        with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.VMManager"),
-            patch("soren.cli.train.PlaybookService"),
-            patch("soren.cli.train.TrainingSession") as mock_session_cls,
-        ):
-            mock_session = MagicMock()
-            mock_session.run = AsyncMock(return_value=mock_flow)
-            mock_session.steps = []
-            mock_session_cls.return_value = mock_session
-
-            result = runner.invoke(cli, ["train", "run", "prolific", "--from-step", "3"])
-
-        assert result.exit_code == 0
-
     def test_train_run_abort_shows_message(self, runner):
         """When session returns None (abort), show abort message."""
         with (
@@ -166,9 +144,9 @@ class TestTrainRunCommand:
 
         assert result.exit_code == 0
         # Should have created 3 sessions (login, discovery, execution)
-        # But first call defaults to "login" per single-flow default
-        # The "all flows" behavior trains login -> discovery -> execution
-        assert mock_session_cls.call_count >= 1
+        assert mock_session_cls.call_count == 3
+        flow_types = [c.kwargs["flow_type"] for c in mock_session_cls.call_args_list]
+        assert flow_types == ["login", "discovery", "execution"]
 
 
 class TestRichTrainingCallbacks:
