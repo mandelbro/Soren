@@ -214,9 +214,10 @@ class TestPlaybookChainResolved:
                 task_type="survey",
                 flow_type="execution",
             )
-            # Verify playbook content appears in agent instructions
+            # Verify playbook content appears exactly once in agent instructions
             instructions = mock_cls.call_args[1]["instructions"]
             assert "Click login" in instructions
+            assert instructions.count("Click login") == 1
 
 
 class TestExecuteUnchanged:
