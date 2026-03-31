@@ -16,7 +16,7 @@ This file completes Phase 2 with the execute_with_learning wrapper, auto-playboo
 
 - **Title**: Add execute_with_learning wrapper to TaskExecutor
 - **File**: src/soren/services/task_executor.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want the task execution loop to automatically detect when the agent is stuck and signal that training is needed, so that I can intervene only when the autonomous system cannot handle a site.
@@ -96,7 +96,7 @@ This file completes Phase 2 with the execute_with_learning wrapper, auto-playboo
 
 - **Title**: Create auto-playbook generation from successful runs
 - **File**: src/soren/services/auto_playbook.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want the system to automatically generate playbooks from successful autonomous runs, so that the agent learns and improves without requiring human training.

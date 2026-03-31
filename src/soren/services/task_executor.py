@@ -12,6 +12,7 @@ from soren.models.session import TaskResult
 from soren.models.task import Task
 from soren.services.credentials_service import CredentialStore
 from soren.services.persona_context import PersonaContext
+from soren.services.stuck_detector import StuckDetector
 from soren.verification.baseline import BaselineManager
 from soren.verification.correction import CorrectionStrategy, apply_correction
 from soren.verification.verifier import ActionVerifier
@@ -62,19 +63,15 @@ class TaskExecutor:
         from soren.patches import apply_all
 
         apply_all()
-
         from agent import ComputerAgent
 
         started = time.perf_counter()
         step_log: list[dict[str, Any]] = []
         screenshots_captured: list[str] = []
         last_screenshot_bytes: bytes | None = None
-        steps_taken = 0
-        error_msg: str | None = None
-        success = False
+        steps_taken, error_msg, success = 0, None, False
         verification_passed: bool | None = None
         correction_applied: str | None = None
-
         playbook_content = self._load_playbook_content(task)
         persona_context = PersonaContext.build(
             persona,
@@ -84,7 +81,6 @@ class TaskExecutor:
             step_budget=self._step_budget,
         )
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
-
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -123,31 +119,15 @@ class TaskExecutor:
             if not success and not error_msg and steps_taken > 0:
                 success = self._has_assistant_final(last_output)
 
-            if success and last_screenshot_bytes:
-                verification_passed = await self._verify_completion(task, last_screenshot_bytes)
-                step_log.append(
-                    {
-                        "step": steps_taken,
-                        "action_type": "verify",
-                        "action_data": {"passed": verification_passed},
-                        "vlm_reasoning": "Tiered verification after completion signal",
-                    }
-                )
-                if verification_passed is False:
-                    strategy = await self._attempt_corrections(computer)
-                    if strategy:
-                        correction_applied = strategy.value
-                        step_log.append(
-                            {
-                                "step": steps_taken,
-                                "action_type": "correction",
-                                "action_data": {"strategy": strategy.value},
-                                "vlm_reasoning": "Applied correction after verification failure",
-                            }
-                        )
-                    success = False
-                    if not error_msg:
-                        error_msg = "Verification failed after completion signal"
+            success, error_msg, verification_passed, correction_applied = await self._run_post_execution_verification(
+                task,
+                computer,
+                success,
+                error_msg,
+                last_screenshot_bytes,
+                steps_taken,
+                step_log,
+            )
 
         except Exception as e:
             error_msg = str(e)
@@ -164,6 +144,128 @@ class TaskExecutor:
             verification_passed=verification_passed,
             correction_applied=correction_applied,
         )
+
+    async def execute_with_learning(
+        self,
+        task: Task,
+        persona: Persona,
+        computer: Any,
+        memories: list[str] | None = None,
+    ) -> tuple[TaskResult, bool]:
+        """Execute with stuck detection. Returns (result, should_offer_training)."""
+        from soren.patches import apply_all
+
+        apply_all()
+        from agent import ComputerAgent
+
+        flow = self._get_flow_playbook(task)
+        effective_budget = min(flow.max_steps, self._step_budget) if flow else self._step_budget
+        detector = StuckDetector(step_budget=effective_budget)
+        playbook_content = self._load_playbook_content(task)
+        combined_memories = list(memories or [])
+        if playbook_content:
+            combined_memories.insert(0, playbook_content)
+        persona_context = PersonaContext.build(
+            persona,
+            task,
+            playbook_content=playbook_content,
+            memories=self._compose_memories(task, persona, combined_memories),
+            step_budget=effective_budget,
+        )
+        messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
+        self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+        started = time.perf_counter()
+        step_log: list[dict[str, Any]] = []
+        screenshots_captured: list[str] = []
+        last_screenshot_bytes: bytes | None = None
+        steps_taken, error_msg, success, stuck = 0, None, False, False
+        verification_passed: bool | None = None
+        correction_applied: str | None = None
+
+        try:
+            agent = ComputerAgent(
+                model=self._vlm_model,
+                tools=[computer],
+                instructions=persona_context,
+                screenshot_delay=0.5,
+                only_n_most_recent_images=5,
+            )
+
+            last_output: list = []
+            async for result in agent.run(messages):
+                steps_taken += 1
+                output = result.get("output", [])
+                last_output = output
+
+                step_screenshot, step_action = None, "unknown"
+                for item in output:
+                    step_entry = self._parse_output_item(item, task.id, steps_taken)
+                    if step_entry:
+                        step_log.append(step_entry)
+                        step_action = step_entry.get("action_type", "unknown")
+                    screenshot_path = self._extract_screenshot(item, task.id, steps_taken)
+                    if screenshot_path:
+                        screenshots_captured.append(screenshot_path)
+                    screenshot_bytes = self._extract_screenshot_bytes(item)
+                    if screenshot_bytes:
+                        last_screenshot_bytes = screenshot_bytes
+                        step_screenshot = screenshot_bytes
+
+                detector.record_step(step_screenshot, step_action)
+                if steps_taken >= effective_budget:
+                    error_msg = f"Step budget ({effective_budget}) exceeded"
+                    break
+
+                if self._is_completion_message(output):
+                    detector.record_completion_signal()
+                    success = True
+                    break
+
+                is_stuck, stuck_reason = detector.is_stuck()
+                if is_stuck:
+                    stuck = True
+                    error_msg = f"Stuck detected: {stuck_reason}"
+                    break
+
+            if not success and not error_msg and steps_taken > 0:
+                success = self._has_assistant_final(last_output)
+
+            success, error_msg, verification_passed, correction_applied = await self._run_post_execution_verification(
+                task,
+                computer,
+                success,
+                error_msg,
+                last_screenshot_bytes,
+                steps_taken,
+                step_log,
+            )
+
+        except Exception as e:
+            error_msg = str(e)
+            success = False
+
+        duration = time.perf_counter() - started
+        task_result = TaskResult(
+            success=success,
+            steps_taken=steps_taken,
+            step_log=step_log,
+            screenshot_paths=screenshots_captured,
+            duration_seconds=duration,
+            error=error_msg,
+            verification_passed=verification_passed,
+            correction_applied=correction_applied,
+        )
+
+        return task_result, stuck
+
+    def _get_flow_playbook(self, task: Task) -> Any:
+        """Load the FlowPlaybook for a task's source, or None if unavailable."""
+        if not self._playbook_service or not task.source_name:
+            return None
+        site = self._playbook_service.load_site(task.source_name)
+        if site is None or not site.flows.execution:
+            return None
+        return site.flows.execution.get(task.task_type or "default") or site.flows.execution.get("default")
 
     def _load_playbook_content(self, task: Task) -> str | None:
         """Load cascading playbook content via resolve()."""
@@ -305,6 +407,48 @@ class TaskExecutor:
             return base64.b64decode(img_data)
         except Exception:
             return None
+
+    async def _run_post_execution_verification(
+        self,
+        task: Task,
+        computer: Any,
+        success: bool,
+        error_msg: str | None,
+        last_screenshot_bytes: bytes | None,
+        steps_taken: int,
+        step_log: list[dict[str, Any]],
+    ) -> tuple[bool, str | None, bool | None, str | None]:
+        """Run verification and correction after agent loop. Returns (success, error, verified, correction)."""
+        verification_passed: bool | None = None
+        correction_applied: str | None = None
+        if not (success and last_screenshot_bytes):
+            return success, error_msg, verification_passed, correction_applied
+
+        verification_passed = await self._verify_completion(task, last_screenshot_bytes)
+        step_log.append(
+            {
+                "step": steps_taken,
+                "action_type": "verify",
+                "action_data": {"passed": verification_passed},
+                "vlm_reasoning": "Tiered verification after completion signal",
+            }
+        )
+        if verification_passed is False:
+            strategy = await self._attempt_corrections(computer)
+            if strategy:
+                correction_applied = strategy.value
+                step_log.append(
+                    {
+                        "step": steps_taken,
+                        "action_type": "correction",
+                        "action_data": {"strategy": strategy.value},
+                        "vlm_reasoning": "Applied correction after verification failure",
+                    }
+                )
+            success = False
+            if not error_msg:
+                error_msg = "Verification failed after completion signal"
+        return success, error_msg, verification_passed, correction_applied
 
     async def _verify_completion(self, task: Task, screenshot: bytes) -> bool:
         """Run tiered verification for completion confirmation."""
