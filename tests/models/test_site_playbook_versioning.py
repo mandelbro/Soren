@@ -72,6 +72,7 @@ class TestMigration:
         # Register a mock v0->v1 migration
         original_migrations = _MIGRATIONS.copy()
         try:
+
             @_register_migration(0, 1)
             def _v0_to_v1(raw: dict) -> dict:
                 raw.setdefault("migrated", True)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -96,7 +96,7 @@ class SitePlaybook(BaseModel):
     source_name: str
     source_url: str
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
     )
     version: int = SCHEMA_VERSION
     flows: SiteFlows
@@ -165,9 +165,7 @@ def validate_credential_placeholders(raw: dict) -> list[str]:
         for forbidden_field in ("instruction", "expected_after"):
             value = step.get(forbidden_field, "")
             if isinstance(value, str) and _CREDENTIAL_PATTERN.search(value):
-                violations.append(
-                    f"{flow_name} step {seq}: credential placeholder in '{forbidden_field}'"
-                )
+                violations.append(f"{flow_name} step {seq}: credential placeholder in '{forbidden_field}'")
     return violations
 
 
@@ -183,9 +181,7 @@ def validate_step_sequences(raw: dict) -> list[str]:
         seqs = sorted(s.get("seq", 0) for s in steps)
         for i in range(1, len(seqs)):
             if seqs[i] != seqs[i - 1] + 1:
-                issues.append(
-                    f"{flow_name}: non-contiguous seq values {seqs}"
-                )
+                issues.append(f"{flow_name}: non-contiguous seq values {seqs}")
                 return
 
     for name in ("login", "discovery"):

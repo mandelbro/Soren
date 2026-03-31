@@ -84,14 +84,16 @@ class TestLLMService:
 
         with patch.object(llm_service._client, "generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = MagicMock(response="not valid json")
-            with patch.object(
-                llm_service._memory_guard,
-                "get_reasoning_model",
-                new_callable=AsyncMock,
-                return_value="gemma3:12b",
+            with (
+                patch.object(
+                    llm_service._memory_guard,
+                    "get_reasoning_model",
+                    new_callable=AsyncMock,
+                    return_value="gemma3:12b",
+                ),
+                pytest.raises(ValueError, match="Invalid JSON"),
             ):
-                with pytest.raises(ValueError, match="Invalid JSON"):
-                    await llm_service.generate_structured("extract", TestSchema)
+                await llm_service.generate_structured("extract", TestSchema)
 
     @pytest.mark.asyncio
     async def test_is_available_returns_true_when_ollama_responds(self, llm_service: LLMService) -> None:
@@ -211,9 +213,7 @@ class TestMemoryGuard:
     @pytest.mark.asyncio
     async def test_custom_pageout_threshold(self) -> None:
         """MemoryGuard respects custom pageout_threshold from config."""
-        guard = MemoryGuard(
-            LLMConfig(primary_model="primary", fallback_model="fallback", pageout_threshold=5_000_000)
-        )
+        guard = MemoryGuard(LLMConfig(primary_model="primary", fallback_model="fallback", pageout_threshold=5_000_000))
         with patch.object(guard, "_get_memory_pressure", return_value="normal"):
             with patch.object(guard, "_get_psutil_pressure", return_value=50.0):
                 with patch.object(guard, "_get_ollama_memory", new_callable=AsyncMock, return_value=0.0):
@@ -224,9 +224,7 @@ class TestMemoryGuard:
     @pytest.mark.asyncio
     async def test_cloud_model_bypasses_pressure_check(self) -> None:
         """MemoryGuard skips pressure checks for cloud models (name ending with -cloud)."""
-        guard = MemoryGuard(
-            LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b")
-        )
+        guard = MemoryGuard(LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b"))
         # Simulate extreme pressure — should still return primary for cloud models
         with patch.object(guard, "_get_memory_pressure", return_value="critical"):
             with patch.object(guard, "_get_psutil_pressure", return_value=99.0):
@@ -239,9 +237,7 @@ class TestMemoryGuard:
     @pytest.mark.asyncio
     async def test_cloud_model_records_skipped_metrics(self) -> None:
         """MemoryGuard records metrics with skipped=True for cloud models."""
-        guard = MemoryGuard(
-            LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b")
-        )
+        guard = MemoryGuard(LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b"))
         with patch.object(guard, "_check_pressure", new_callable=AsyncMock) as mock_pressure:
             await guard.get_reasoning_model(None)
             mock_pressure.assert_not_called()
@@ -249,9 +245,7 @@ class TestMemoryGuard:
     @pytest.mark.asyncio
     async def test_non_cloud_model_still_checks_pressure(self) -> None:
         """MemoryGuard still checks pressure for non-cloud models."""
-        guard = MemoryGuard(
-            LLMConfig(primary_model="gemma3:12b", fallback_model="gemma3:4b")
-        )
+        guard = MemoryGuard(LLMConfig(primary_model="gemma3:12b", fallback_model="gemma3:4b"))
         with patch.object(guard, "_check_pressure", new_callable=AsyncMock, return_value=True) as mock_pressure:
             result = await guard.get_reasoning_model(None)
             mock_pressure.assert_called_once()

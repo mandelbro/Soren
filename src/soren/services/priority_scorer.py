@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from soren.models.persona import Persona
@@ -45,12 +45,7 @@ class TaskPriorityScorer:
         fit = self._persona_fit(task, persona)
         success = self._success_rate(task, history or [])
         age = self._backlog_age(task)
-        return (
-            self._w_reward * reward_norm
-            + self._w_fit * fit
-            + self._w_success * success
-            + self._w_age * age
-        )
+        return self._w_reward * reward_norm + self._w_fit * fit + self._w_success * success + self._w_age * age
 
     def _reward_factor(self, task: Task, tasks: list[Task]) -> float:
         """Normalize estimated_reward across backlog. 0 if no reward or max is 0."""
@@ -75,10 +70,7 @@ class TaskPriorityScorer:
         """Historical success rate for (task_type, source_name). Default 0.5 when no history."""
         key_type = task.task_type or "unknown"
         key_source = task.source_name or ""
-        relevant = [
-            t for t in history
-            if (t.task_type or "") == key_type and (t.source_name or "") == key_source
-        ]
+        relevant = [t for t in history if (t.task_type or "") == key_type and (t.source_name or "") == key_source]
         if not relevant:
             return DEFAULT_SUCCESS_RATE
         completed = sum(1 for t in relevant if (t.status or "") == "completed")
@@ -93,10 +85,10 @@ class TaskPriorityScorer:
             if "T" in created:
                 dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
             else:
-                dt = datetime.strptime(created[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                dt = datetime.strptime(created[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
         except (ValueError, TypeError):
             return 0.0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         delta = now - dt
         hours = delta.total_seconds() / 3600
         return min(1.0, hours / MAX_AGE_HOURS)

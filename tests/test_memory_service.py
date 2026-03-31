@@ -1,5 +1,7 @@
 """Tests for MemoryService (WI 6.1)."""
 
+from datetime import UTC
+
 import pytest
 
 from soren.services.database import DatabaseManager
@@ -131,9 +133,9 @@ async def test_prune_removes_entries_below_importance_threshold(memory_service):
 @pytest.mark.asyncio
 async def test_prune_removes_expired_entries(memory_service):
     """prune() removes expired entries (past expires_at)."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     await memory_service.store(
         "expired",
         {"x": 1},

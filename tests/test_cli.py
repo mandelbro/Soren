@@ -84,6 +84,7 @@ class TestCycleCommands:
         assert "Cycle complete" in result.output or "Assessing backlog" in result.output
 
 
+@pytest.mark.integration
 class TestDiscoverCommands:
     def test_discover_refresh_runs(self, runner, tmp_path):
         with (

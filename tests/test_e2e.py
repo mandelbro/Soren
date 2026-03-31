@@ -19,7 +19,7 @@ def _lume_reachable() -> bool:
             s.settimeout(2)
             s.connect(("localhost", 7777))
         return True
-    except (socket.error, OSError):
+    except OSError:
         return False
 
 

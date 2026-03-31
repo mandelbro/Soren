@@ -55,6 +55,4 @@ def load_settings(path: Path | None = None) -> SorenSettings:
     playbooks_raw = raw.get("playbooks", {})
     playbooks = PlaybooksConfig.model_validate(playbooks_raw) if playbooks_raw else defaults.playbooks
 
-    return SorenSettings(
-        vm=vm, llm=llm, vlm=vlm, scheduler=scheduler, verification=verification, playbooks=playbooks
-    )
+    return SorenSettings(vm=vm, llm=llm, vlm=vlm, scheduler=scheduler, verification=verification, playbooks=playbooks)

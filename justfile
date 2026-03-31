@@ -1,6 +1,14 @@
 # Soren Desktop Agent Framework
 set dotenv-load
 
+# Default: run all quality gates (format, lint, typecheck, test)
+default: format lint typecheck test
+
+# Install all dependencies and pre-commit hooks
+init:
+    uv sync --extra dev
+    uv run pre-commit install
+
 # Install/sync — uv natively installs the project from pyproject.toml [build-system].
 # Do NOT add `uv pip install -e .` here; it conflicts with `uv run`'s implicit sync
 # and causes intermittent ModuleNotFoundError when asdf shims are present.
@@ -75,11 +83,33 @@ test *ARGS:
 test-e2e *ARGS:
     uv run python -m pytest {{ARGS}} -m e2e
 
-lint:
-    uv run ruff check src/ tests/
+# Run tests with coverage
+coverage:
+    uv run python -m pytest -m "not e2e" --cov=soren --cov-report=term-missing --cov-fail-under=60
 
+# Lint and auto-fix (python -m bypasses asdf shim conflicts)
+lint:
+    uv run python -m ruff check --fix src/ tests/
+
+# Check formatting without modifying files
+format-check:
+    uv run python -m ruff format --check src/ tests/
+
+# Format code
 format:
-    uv run ruff format src/ tests/
+    uv run python -m ruff format src/ tests/
+
+# Type check
+typecheck:
+    uv run python -m pyright
+
+# Run all quality gates (same as default)
+all: default
+
+# Clean build artifacts
+clean:
+    rm -rf .pytest_cache .ruff_cache .pyright __pycache__ dist build *.egg-info
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 # Ollama — Soren uses a DEDICATED instance on port 11435 (separate from default 11434)
 # The OLLAMA_HOST env var is loaded from .env via dotenv-load and also set explicitly

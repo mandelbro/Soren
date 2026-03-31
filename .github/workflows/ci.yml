@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    # Lint and format checks run on ubuntu (no heavy deps needed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Lint
+        run: uvx ruff@0.9.10 check src/ tests/
+
+      - name: Format check
+        run: uvx ruff@0.9.10 format --check src/ tests/
+
+  test:
+    # Tests require macOS for Apple Silicon deps (MLX, CUA SDK)
+    runs-on: macos-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Type check
+        continue-on-error: true
+        run: uv run pyright
+
+      - name: Test with coverage
+        run: uv run pytest -m "not e2e and not integration" --cov=soren --cov-report=term-missing --cov-fail-under=60

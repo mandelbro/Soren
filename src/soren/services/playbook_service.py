@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -44,6 +44,7 @@ TASK_SECTION_MAP: dict[str, list[str]] = {
     "proposal": ["login", "proposal"],
 }
 
+
 @dataclass
 class PlaybookInfo:
     """Metadata for a playbook file."""
@@ -67,7 +68,7 @@ class PlaybookUpdate:
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _safe_service_name(name: str) -> str:
@@ -225,19 +226,13 @@ class PlaybookService:
             if host_domain:
                 host_content = self._resolve_host_content(host_domain)
                 if host_content:
-                    sections.append(
-                        "## Host Instructions\n"
-                        "These apply to the survey host platform.\n"
-                        f"{host_content}"
-                    )
+                    sections.append(f"## Host Instructions\nThese apply to the survey host platform.\n{host_content}")
 
             # Base tier
             base_content = self._resolve_base_content(task_type)
             if base_content:
                 sections.append(
-                    "## General Guidelines\n"
-                    "Follow these when no specific instructions apply above.\n"
-                    f"{base_content}"
+                    f"## General Guidelines\nFollow these when no specific instructions apply above.\n{base_content}"
                 )
 
         if not sections:
@@ -316,7 +311,7 @@ class PlaybookService:
         if success:
             flow.consecutive_successes += 1
             flow.confidence = min(1.0, flow.confidence + 0.15)
-            flow.verified_at = datetime.now(timezone.utc)
+            flow.verified_at = datetime.now(UTC)
         else:
             flow.consecutive_successes = 0
             flow.confidence = max(0.0, flow.confidence - 0.2)
@@ -435,9 +430,7 @@ class PlaybookService:
             preview=new_content if dry_run else None,
         )
 
-    def _find_and_replace_generated(
-        self, content: str, section_title: str, new_section: str
-    ) -> str | None:
+    def _find_and_replace_generated(self, content: str, section_title: str, new_section: str) -> str | None:
         """Find a generated section for this title and replace it. Returns None if not found."""
         title_lower = section_title.lower()
         for m in SOREN_MARKER.finditer(content):
@@ -448,7 +441,7 @@ class PlaybookService:
                     end = content.find("\n\n## ", m.end())
                     if end == -1:
                         end = len(content)
-                    before = content[: section_start].rstrip()
+                    before = content[:section_start].rstrip()
                     after = content[end:].lstrip()
                     replacement = new_section.strip()
                     sep_before = "\n\n" if before else ""
@@ -474,9 +467,9 @@ class PlaybookService:
         """Build prompt for LLM to extract reusable instructions from step log."""
         return f"""You are summarizing a successful task execution into reusable playbook instructions.
 
-Task: {task.title or task.description or 'Unknown'}
-Task type: {task.task_type or 'task'}
-Service: {task.source_name or 'unknown'}
+Task: {task.title or task.description or "Unknown"}
+Task type: {task.task_type or "task"}
+Service: {task.source_name or "unknown"}
 
 Execution steps:
 {steps_text}
@@ -500,9 +493,7 @@ Output plain markdown only."""
                     service_name=path.stem,
                     file_path=path,
                     file_size=stat.st_size,
-                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime(
-                        "%Y-%m-%dT%H:%M:%SZ"
-                    ),
+                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     section_count=section_count,
                 )
             )

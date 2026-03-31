@@ -10,7 +10,8 @@ Configurable via enter_key_behavior: "enter_only" (default) or "escape_enter".
 
 from __future__ import annotations
 
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 from soren.patches.enter_key_config import get_enter_key_behavior
 

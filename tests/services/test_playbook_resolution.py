@@ -79,10 +79,12 @@ class TestResolve:
     def test_resolve_all_three_tiers(self, tmp_path: Path) -> None:
         svc = _make_svc(tmp_path)
         svc.save_site(_make_site_with_execution())
-        svc.save_host(HostPlaybook(
-            host_domain="qualtrics.com",
-            navigation={"quirk": "Double-click submit"},
-        ))
+        svc.save_host(
+            HostPlaybook(
+                host_domain="qualtrics.com",
+                navigation={"quirk": "Double-click submit"},
+            )
+        )
         _write_base_playbook(tmp_path / "playbooks" / "base", "survey", {"nav": "click next"})
 
         result = svc.resolve("prolific", "qualtrics.com", "survey", "execution")

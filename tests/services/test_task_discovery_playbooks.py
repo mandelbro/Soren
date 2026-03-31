@@ -89,7 +89,10 @@ class TestPhase1NavigateWithPlaybooks:
         playbook_svc = _make_playbook_service_with_login()
 
         discovery = TaskDiscovery(
-            settings, MagicMock(), MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
         )
         source = _make_source()
@@ -104,7 +107,10 @@ class TestPhase1NavigateWithPlaybooks:
         playbook_svc.load_site.return_value = None
 
         discovery = TaskDiscovery(
-            settings, MagicMock(), MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
         )
 
@@ -135,7 +141,10 @@ class TestPhase1NavigateWithPlaybooks:
         ]
 
         discovery = TaskDiscovery(
-            settings, MagicMock(), MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
         )
         source = _make_source()
@@ -147,7 +156,10 @@ class TestPhase1NavigateWithPlaybooks:
     def test_no_playbook_service_uses_adapter(self) -> None:
         settings = _make_settings()
         discovery = TaskDiscovery(
-            settings, MagicMock(), MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
         )
         adapter = _make_adapter()
         source = _make_source()

@@ -147,14 +147,16 @@ class TestConnectComputer:
         config = VMConfig(name="soren-vm")
         manager = VMManager(config)
 
-        with patch("computer.Computer") as mock_computer_cls:
-            with patch(
+        with (
+            patch("computer.Computer") as mock_computer_cls,
+            patch(
                 "soren.patches.vnc_screenshot.patch_computer_screenshot",
-            ) as mock_patch:
-                mock_computer = MagicMock()
-                mock_computer.run = AsyncMock()
-                mock_computer_cls.return_value = mock_computer
+            ) as mock_patch,
+        ):
+            mock_computer = MagicMock()
+            mock_computer.run = AsyncMock()
+            mock_computer_cls.return_value = mock_computer
 
-                await manager.connect_computer()
+            await manager.connect_computer()
 
-                mock_patch.assert_called_once_with(mock_computer, manager._client, "soren-vm")
+            mock_patch.assert_called_once_with(mock_computer, manager._client, "soren-vm")

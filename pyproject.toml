@@ -29,6 +29,8 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
     "pytest-cov>=5.0",
+    "pyright>=1.1",
+    "pre-commit>=3.0",
 ]
 
 [project.scripts]
@@ -44,14 +46,39 @@ packages = ["src/soren"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+src = ["src", "tests"]
+fix = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "B904",    # raise from in except (fix incrementally)
+    "B905",    # zip without strict= (fix incrementally)
+    "UP042",   # str(Enum) -> StrEnum (fix incrementally across many files)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["soren"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+include = ["src"]
+exclude = ["tests", "src/soren/patches"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+addopts = "-v --tb=short"
 markers = [
     "integration: marks tests as integration (require live VM, models)",
     "e2e: marks tests as end-to-end (require live VM, Lume, models)",
@@ -59,3 +86,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/soren"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true

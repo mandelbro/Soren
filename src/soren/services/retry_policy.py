@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
@@ -59,12 +59,8 @@ class RetryPolicy:
     def __init__(self, settings: SorenSettings) -> None:
         self._settings = settings
         sched = getattr(settings, "scheduler", None)
-        self._backoff = (
-            getattr(sched, "retry_backoff_minutes", None) or DEFAULT_BACKOFF
-        )
-        self._max_retries = (
-            getattr(sched, "max_task_retries", None) or DEFAULT_MAX_RETRIES
-        )
+        self._backoff = getattr(sched, "retry_backoff_minutes", None) or DEFAULT_BACKOFF
+        self._max_retries = getattr(sched, "max_task_retries", None) or DEFAULT_MAX_RETRIES
 
     def compute_next_action(self, task: Task, failure_reason: str) -> RetryAction:
         """Determine retry or dead-letter based on attempt_count and max_retries."""
@@ -76,5 +72,5 @@ class RetryPolicy:
 
         idx = min(attempt - 1, len(self._backoff) - 1)
         mins = self._backoff[idx]
-        next_at = datetime.now(timezone.utc) + timedelta(minutes=mins)
+        next_at = datetime.now(UTC) + timedelta(minutes=mins)
         return RetryAction(action="retry", next_eligible_at=next_at, backoff_minutes=mins)
