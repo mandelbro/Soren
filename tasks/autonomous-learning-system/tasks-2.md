@@ -248,7 +248,7 @@ Phase 1b evolves the existing PlaybookService with YAML CRUD, cascading resoluti
 
 - **Title**: Integrate cascading playbooks into TaskDiscovery, PersonaContext, and TaskExecutor
 - **File**: src/soren/services/task_discovery.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 5
 
 - **User Story (business-facing)**: As a Soren operator, I want the CUA agent to automatically receive cascading playbook instructions during both task discovery and task execution, so that learned playbook knowledge improves agent performance without manual intervention.
@@ -346,7 +346,7 @@ Phase 1b evolves the existing PlaybookService with YAML CRUD, cascading resoluti
 
 - **Title**: Create StuckDetector service
 - **File**: src/soren/services/stuck_detector.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator, I want the system to detect when the CUA agent is stuck (repeating actions, same screen, or budget exhaustion) so that it can trigger training mode or skip to the next task instead of wasting compute.

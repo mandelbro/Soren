@@ -168,7 +168,7 @@ class PersonaContext:
 
         # Playbook integration
         if playbook_content and playbook_content.strip():
-            sections.append("Service playbook instructions:\n" + playbook_content.strip())
+            sections.append("Playbook instructions (follow in order of specificity):\n" + playbook_content.strip())
 
         # Memory integration
         if memories and any(m.strip() for m in memories):

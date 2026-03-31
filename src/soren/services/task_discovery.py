@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from soren.models.task_source import TaskSource
     from soren.services.config_loader import SorenSettings
     from soren.services.llm_service import LLMService
+    from soren.services.playbook_service import PlaybookService
     from soren.services.task_backlog import TaskBacklog
     from soren.services.vm_manager import VMManager
 
@@ -32,12 +33,14 @@ class TaskDiscovery:
         backlog: TaskBacklog,
         *,
         screenshot_dir: Path | None = None,
+        playbook_service: PlaybookService | None = None,
     ) -> None:
         self._settings = settings
         self._llm = llm
         self._vm = vm
         self._backlog = backlog
         self._screenshot_dir = screenshot_dir or Path("data/screenshots/discovery")
+        self._playbook_service = playbook_service
 
     async def discover(
         self,
@@ -64,6 +67,39 @@ class TaskDiscovery:
         except Exception:
             return []
 
+    def _build_nav_prompt(self, adapter: Any, persona: Persona, source: TaskSource) -> str:
+        """Build navigation prompt, injecting login/discovery playbooks if available."""
+        if self._playbook_service is None:
+            return adapter.navigation_prompt(source, persona)
+
+        site = self._playbook_service.load_site(source.name)
+        if site is None:
+            return adapter.navigation_prompt(source, persona)
+
+        parts: list[str] = []
+
+        # Login flow
+        if site.flows.login:
+            login_instructions = self._playbook_service.to_prompt_instructions(site.flows.login, "login")
+            parts.append(login_instructions)
+
+        # Discovery flow (replaces adapter nav prompt if available)
+        if site.flows.discovery:
+            discovery_instructions = self._playbook_service.to_prompt_instructions(site.flows.discovery, "discovery")
+            if parts:
+                parts.append(f"\nAfter login:\n\n{discovery_instructions}")
+            else:
+                parts.append(discovery_instructions)
+        else:
+            # Fall back to adapter prompt for discovery
+            adapter_prompt = adapter.navigation_prompt(source, persona)
+            if parts:
+                parts.append(f"\nAfter login:\n\n{adapter_prompt}")
+            else:
+                parts.append(adapter_prompt)
+
+        return "\n".join(parts)
+
     async def _phase1_navigate(
         self,
         adapter: Any,
@@ -81,7 +117,7 @@ class TaskDiscovery:
         vlm_config = getattr(self._settings, "vlm", None)
         vlm_model = f"mlx/{vlm_config.model}" if vlm_config else "mlx/mlx-community/UI-TARS-1.5-7B-6bit"
 
-        nav_prompt = adapter.navigation_prompt(source, persona)
+        nav_prompt = self._build_nav_prompt(adapter, persona, source)
         messages = [{"role": "user", "content": nav_prompt}]
 
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
