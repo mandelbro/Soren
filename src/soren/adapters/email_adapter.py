@@ -21,6 +21,12 @@ class EmailAdapter:
     def navigation_prompt(self, source: TaskSource, persona: Persona) -> str:
         """Instructions for UI-TARS to reach inbox (~20 lines)."""
         url = source.url or "the email provider inbox"
+        hint_section = ""
+        if source.discovery_hint:
+            hint_section = f"""
+SITE HINT: {source.discovery_hint}
+Use the above hint to guide your navigation on this specific site.
+"""
         return f"""Navigate to {url}.
 
 1. LOGIN: If you see a login page, use the stored credentials for this service.
@@ -28,7 +34,7 @@ class EmailAdapter:
    {DISCOVERY_READY} (we cannot proceed; human intervention required).
 
 2. COOKIE BANNERS: Dismiss any cookie consent or banner overlays so the main content is visible.
-
+{hint_section}
 3. INBOX: Navigate to the Inbox. If filters exist, select "All Mail" or "Primary".
 
 4. UNREAD: Look for a way to sort by "Unread" or filter to unread messages.

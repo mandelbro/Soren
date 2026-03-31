@@ -16,7 +16,7 @@ Phase 5 has no dependencies and can be implemented in parallel with Phase 1. Pha
 
 - **Title**: Wire discovery_hint into adapter navigation prompts
 - **File**: src/soren/adapters/survey_platform.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren operator, I want the discovery_hint field from my persona YAML to be injected into adapter navigation prompts, so that the CUA agent receives site-specific guidance even before playbooks exist.
