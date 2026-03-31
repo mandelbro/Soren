@@ -181,14 +181,10 @@ class SorenMetaAgent:
             await self._backlog.mark_in_progress(task.id)
             task_executed = task
             memory_key = f"{task.source_name or 'default'}:{task.task_type or 'task'}:{task.persona_id or ''}"
-            recalled = await self._memory_service.recall(
-                key=memory_key, entry_type=None, limit=5, min_importance=0.0
-            )
+            recalled = await self._memory_service.recall(key=memory_key, entry_type=None, limit=5, min_importance=0.0)
             memories = [e.to_prompt_line() for e in recalled]
             try:
-                task_result = await self._executor.execute(
-                    task, persona, computer, memories=memories
-                )
+                task_result = await self._executor.execute(task, persona, computer, memories=memories)
             except Exception as e:
                 task_result = TaskResult(success=False, error=str(e))
 

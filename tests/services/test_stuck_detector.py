@@ -109,12 +109,10 @@ class TestBudgetExhaustion:
 
 class TestIsStuckPriority:
     def test_returns_first_matching_reason(self) -> None:
-        detector = StuckDetector(
-            step_budget=10, same_screen_threshold=3, budget_exhaustion_pct=0.8
-        )
+        detector = StuckDetector(step_budget=10, same_screen_threshold=3, budget_exhaustion_pct=0.8)
         # Both same-screenshot and budget exhaustion should trigger
         screenshot = b"same"
-        for i in range(8):
+        for _ in range(8):
             detector.record_step(screenshot, "click")
 
         stuck, reason = detector.is_stuck()

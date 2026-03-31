@@ -1,7 +1,7 @@
 """SQLite database layer with version-tracked migrations."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -51,7 +51,7 @@ class DatabaseManager:
             await self._conn.executescript(sql)
             await self._conn.execute(
                 "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-                (version, datetime.now(timezone.utc).isoformat()),
+                (version, datetime.now(UTC).isoformat()),
             )
             await self._conn.commit()
 
@@ -85,7 +85,7 @@ class DatabaseManager:
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _json_dumps(obj: dict | list | None) -> str | None:

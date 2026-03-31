@@ -62,32 +62,24 @@ class TestSurveyPlatformHint:
 class TestEmailAdapterHint:
     def test_prompt_without_hint(self):
         adapter = EmailAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="email", hint=None), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="email", hint=None), _persona())
         assert "SITE HINT" not in prompt
         assert "INBOX" in prompt
 
     def test_prompt_with_hint(self):
         adapter = EmailAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="email", hint=HINT_TEXT), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="email", hint=HINT_TEXT), _persona())
         assert "SITE HINT:" in prompt
         assert HINT_TEXT in prompt
 
     def test_prompt_with_empty_hint(self):
         adapter = EmailAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="email", hint=""), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="email", hint=""), _persona())
         assert "SITE HINT" not in prompt
 
     def test_hint_appears_after_cookie_banners(self):
         adapter = EmailAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="email", hint=HINT_TEXT), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="email", hint=HINT_TEXT), _persona())
         cookie_pos = prompt.index("COOKIE BANNERS")
         hint_pos = prompt.index("SITE HINT")
         inbox_pos = prompt.index("3. INBOX")
@@ -100,32 +92,24 @@ class TestEmailAdapterHint:
 class TestGenericFormHint:
     def test_prompt_without_hint(self):
         adapter = GenericFormAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="generic_form", hint=None), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="generic_form", hint=None), _persona())
         assert "SITE HINT" not in prompt
         assert "FORM" in prompt
 
     def test_prompt_with_hint(self):
         adapter = GenericFormAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="generic_form", hint=HINT_TEXT), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="generic_form", hint=HINT_TEXT), _persona())
         assert "SITE HINT:" in prompt
         assert HINT_TEXT in prompt
 
     def test_prompt_with_empty_hint(self):
         adapter = GenericFormAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="generic_form", hint=""), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="generic_form", hint=""), _persona())
         assert "SITE HINT" not in prompt
 
     def test_hint_appears_after_cookie_banners(self):
         adapter = GenericFormAdapter()
-        prompt = adapter.navigation_prompt(
-            _source(source_type="generic_form", hint=HINT_TEXT), _persona()
-        )
+        prompt = adapter.navigation_prompt(_source(source_type="generic_form", hint=HINT_TEXT), _persona())
         cookie_pos = prompt.index("COOKIE BANNERS")
         hint_pos = prompt.index("SITE HINT")
         form_pos = prompt.index("3. FORM")

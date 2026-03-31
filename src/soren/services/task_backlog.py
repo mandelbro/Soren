@@ -3,7 +3,7 @@
 import hashlib
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from soren.models.session import BacklogSummary, DiscoveredTask, InsertResult
@@ -191,7 +191,7 @@ class TaskBacklog:
             )
         else:
             mins = backoff[min(attempt - 1, len(backoff) - 1)]
-            next_at = (datetime.now(timezone.utc) + timedelta(minutes=mins)).isoformat()
+            next_at = (datetime.now(UTC) + timedelta(minutes=mins)).isoformat()
             await self._db.execute(
                 "UPDATE tasks SET status = 'queued', attempt_count = ?, "
                 "next_eligible_at = ?, last_failure_reason = ? WHERE id = ?",

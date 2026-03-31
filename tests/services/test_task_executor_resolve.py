@@ -43,7 +43,9 @@ class TestExecutorUsesResolve:
         playbook_svc.resolve.return_value = "## Site-Specific Instructions\nDo the thing."
 
         executor = TaskExecutor(
-            settings, MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
             screenshot_dir=tmp_path / "screenshots",
         )
@@ -66,7 +68,9 @@ class TestExecutorUsesResolve:
         playbook_svc.resolve.return_value = "Resolved playbook content"
 
         executor = TaskExecutor(
-            settings, MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
             screenshot_dir=tmp_path / "screenshots",
         )
@@ -79,7 +83,9 @@ class TestExecutorUsesResolve:
         settings = _make_settings()
 
         executor = TaskExecutor(
-            settings, MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
             playbook_service=None,
             screenshot_dir=tmp_path / "screenshots",
         )
@@ -94,7 +100,9 @@ class TestExecutorUsesResolve:
         playbook_svc.resolve.return_value = ""
 
         executor = TaskExecutor(
-            settings, MagicMock(), MagicMock(),
+            settings,
+            MagicMock(),
+            MagicMock(),
             playbook_service=playbook_svc,
             screenshot_dir=tmp_path / "screenshots",
         )

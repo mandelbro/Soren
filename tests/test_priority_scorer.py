@@ -1,6 +1,6 @@
 """Tests for TaskPriorityScorer."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 from soren.models.persona import Persona
@@ -29,7 +29,7 @@ def _make_task(
     created_at: str | None = None,
     status: str = "queued",
 ) -> Task:
-    now = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    now = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     return Task(
         id="t1",
         dedup_key="k1",
@@ -52,9 +52,7 @@ def _make_persona(conscientiousness: float = 0.5) -> Persona:
 
 def test_high_reward_scores_higher():
     """High-reward task scores higher than low-reward when reward weight is dominant."""
-    settings = _make_settings(
-        {"reward": 0.9, "persona_fit": 0.03, "success_rate": 0.03, "backlog_age": 0.04}
-    )
+    settings = _make_settings({"reward": 0.9, "persona_fit": 0.03, "success_rate": 0.03, "backlog_age": 0.04})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
     tasks = [
@@ -68,13 +66,11 @@ def test_high_reward_scores_higher():
 
 def test_older_task_scores_higher():
     """Older task scores higher than newer when age weight is active."""
-    settings = _make_settings(
-        {"reward": 0.1, "persona_fit": 0.1, "success_rate": 0.1, "backlog_age": 0.7}
-    )
+    settings = _make_settings({"reward": 0.1, "persona_fit": 0.1, "success_rate": 0.1, "backlog_age": 0.7})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
-    old_ts = (datetime.now(timezone.utc) - timedelta(hours=100)).isoformat()
-    new_ts = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    old_ts = (datetime.now(UTC) - timedelta(hours=100)).isoformat()
+    new_ts = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
     old_task = _make_task(created_at=old_ts, estimated_reward=5.0)
     new_task = _make_task(created_at=new_ts, estimated_reward=5.0)
     old_score = scorer.score(old_task, persona)
@@ -84,9 +80,7 @@ def test_older_task_scores_higher():
 
 def test_historical_success_boosts_score():
     """Task with high historical success rate scores higher."""
-    settings = _make_settings(
-        {"reward": 0.1, "persona_fit": 0.1, "success_rate": 0.8, "backlog_age": 0.0}
-    )
+    settings = _make_settings({"reward": 0.1, "persona_fit": 0.1, "success_rate": 0.8, "backlog_age": 0.0})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
     task = _make_task(task_type="survey", source_name="src")
@@ -104,9 +98,7 @@ def test_historical_success_boosts_score():
 
 def test_persona_fit_boosts_surveys():
     """Survey task scores higher with high-conscientiousness persona."""
-    settings = _make_settings(
-        {"reward": 0.0, "persona_fit": 1.0, "success_rate": 0.0, "backlog_age": 0.0}
-    )
+    settings = _make_settings({"reward": 0.0, "persona_fit": 1.0, "success_rate": 0.0, "backlog_age": 0.0})
     scorer = TaskPriorityScorer(settings)
     task = _make_task(task_type="survey")
     low = scorer.score(task, _make_persona(conscientiousness=0.2))
@@ -119,7 +111,7 @@ def test_default_weights_produce_sensible_ranking():
     settings = _make_settings()
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona(0.7)
-    old_ts = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    old_ts = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
     tasks = [
         _make_task(estimated_reward=2.0, created_at=old_ts),
         _make_task(estimated_reward=10.0, created_at=old_ts),
@@ -130,21 +122,17 @@ def test_default_weights_produce_sensible_ranking():
 
 def test_custom_weights_override_defaults():
     """Custom weights override defaults."""
-    settings = _make_settings(
-        {"reward": 0.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 1.0}
-    )
+    settings = _make_settings({"reward": 0.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 1.0})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
-    old = _make_task(created_at=(datetime.now(timezone.utc) - timedelta(hours=100)).isoformat())
-    new = _make_task(created_at=(datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat())
+    old = _make_task(created_at=(datetime.now(UTC) - timedelta(hours=100)).isoformat())
+    new = _make_task(created_at=(datetime.now(UTC) - timedelta(minutes=5)).isoformat())
     assert scorer.score(old, persona) > scorer.score(new, persona)
 
 
 def test_no_history_defaults_success_rate():
     """Task with no history defaults to 0.5 success rate."""
-    settings = _make_settings(
-        {"reward": 0.0, "persona_fit": 0.0, "success_rate": 1.0, "backlog_age": 0.0}
-    )
+    settings = _make_settings({"reward": 0.0, "persona_fit": 0.0, "success_rate": 1.0, "backlog_age": 0.0})
     scorer = TaskPriorityScorer(settings)
     task = _make_task()
     persona = _make_persona()
@@ -154,9 +142,7 @@ def test_no_history_defaults_success_rate():
 
 def test_rank_returns_descending_order():
     """rank() returns tasks in descending score order."""
-    settings = _make_settings(
-        {"reward": 0.5, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.5}
-    )
+    settings = _make_settings({"reward": 0.5, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.5})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
     low_reward = _make_task(estimated_reward=1.0)
@@ -169,12 +155,10 @@ def test_rank_returns_descending_order():
 
 def test_tied_scores_stable_sort():
     """Tied scores maintain stable sort order (by created_at)."""
-    settings = _make_settings(
-        {"reward": 0.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.0}
-    )
+    settings = _make_settings({"reward": 0.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.0})
     scorer = TaskPriorityScorer(settings)
     persona = _make_persona()
-    ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    ts = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     t1 = _make_task(estimated_reward=5.0, created_at=ts)
     t2 = _make_task(estimated_reward=5.0, created_at=ts)
     tasks = [t1, t2]
@@ -184,9 +168,7 @@ def test_tied_scores_stable_sort():
 
 def test_no_reward_returns_zero_reward_factor():
     """Task with no estimated_reward gets 0 reward factor."""
-    settings = _make_settings(
-        {"reward": 1.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.0}
-    )
+    settings = _make_settings({"reward": 1.0, "persona_fit": 0.0, "success_rate": 0.0, "backlog_age": 0.0})
     scorer = TaskPriorityScorer(settings)
     task = _make_task(estimated_reward=None)
     persona = _make_persona()

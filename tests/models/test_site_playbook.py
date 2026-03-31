@@ -1,6 +1,6 @@
 """Tests for SitePlaybook Pydantic models (Task 002)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -39,9 +39,7 @@ class TestPlaybookStep:
         assert step.field == "credential:username"
 
     def test_tab_transition_fields(self):
-        step = PlaybookStep(
-            **_step(1, triggers_new_tab=True, host_domain="qualtrics.com")
-        )
+        step = PlaybookStep(**_step(1, triggers_new_tab=True, host_domain="qualtrics.com"))
         assert step.triggers_new_tab is True
         assert step.host_domain == "qualtrics.com"
 
@@ -136,7 +134,7 @@ class TestSitePlaybook:
         data = {
             "source_name": "test",
             "source_url": "https://test.com",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "version": 1,
             "flows": {
                 "login": {

@@ -20,9 +20,7 @@ def _make_settings(playbooks_dir: Path):
 
 def _make_llm():
     llm = MagicMock()
-    llm.generate = AsyncMock(
-        return_value="1. Navigate to login page.\n2. Enter credentials.\n3. Submit form."
-    )
+    llm.generate = AsyncMock(return_value="1. Navigate to login page.\n2. Enter credentials.\n3. Submit form.")
     return llm
 
 
@@ -112,9 +110,7 @@ def test_get_relevant_sections_returns_full_content_when_no_match(playbook_servi
 
 
 @pytest.mark.asyncio
-async def test_write_back_generates_new_playbook_when_none_exists(
-    playbook_service, playbook_dir
-):
+async def test_write_back_generates_new_playbook_when_none_exists(playbook_service, playbook_dir):
     """write_back() generates new playbook file when none exists."""
     task = _make_task()
     step_log = [
@@ -132,9 +128,7 @@ async def test_write_back_generates_new_playbook_when_none_exists(
 
 
 @pytest.mark.asyncio
-async def test_write_back_appends_new_section_to_existing_playbook(
-    playbook_service, playbook_dir
-):
+async def test_write_back_appends_new_section_to_existing_playbook(playbook_service, playbook_dir):
     """write_back() appends new section to existing playbook."""
     path = playbook_dir / "prolific.md"
     path.write_text("# Prolific\n\n## Human Section\nDo not modify this.")
@@ -148,9 +142,7 @@ async def test_write_back_appends_new_section_to_existing_playbook(
 
 
 @pytest.mark.asyncio
-async def test_write_back_updates_existing_generated_section(
-    playbook_service, playbook_dir
-):
+async def test_write_back_updates_existing_generated_section(playbook_service, playbook_dir):
     """write_back() updates existing generated section (replaces between markers)."""
     path = playbook_dir / "prolific.md"
     path.write_text(
@@ -191,9 +183,7 @@ async def test_write_back_tags_generated_content_with_marker(playbook_service, p
 
 
 @pytest.mark.asyncio
-async def test_write_back_dry_run_returns_preview_without_writing(
-    playbook_service, playbook_dir
-):
+async def test_write_back_dry_run_returns_preview_without_writing(playbook_service, playbook_dir):
     """write_back() with dry_run=True returns preview without writing file."""
     task = _make_task()
     update = await playbook_service.write_back("prolific", task, [], dry_run=True)

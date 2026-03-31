@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,11 +14,11 @@ CYCLE_RETENTION_DAYS = 30
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _iso_future(days: int) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 class MemoryEntry:
@@ -192,7 +192,7 @@ class MemoryService:
             )
 
         # Apply importance decay and reorder by effective_importance × recency
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         scored: list[tuple[float, MemoryEntry]] = []
         for e in entries:
             try:

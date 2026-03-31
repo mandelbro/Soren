@@ -689,9 +689,7 @@ def resources_check():
         )
     keep_alive = os.environ.get("OLLAMA_KEEP_ALIVE")
     if keep_alive and keep_alive != "0":
-        warnings.append(
-            f"OLLAMA_KEEP_ALIVE={keep_alive}; 0 recommended for immediate model unload."
-        )
+        warnings.append(f"OLLAMA_KEEP_ALIVE={keep_alive}; 0 recommended for immediate model unload.")
 
     if issues:
         console.print("[red]Issues:[/red]")

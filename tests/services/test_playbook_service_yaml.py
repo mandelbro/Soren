@@ -102,9 +102,7 @@ class TestSaveFlow:
         assert loaded.flows.discovery.steps[0].instruction == "Open tasks"
 
     def test_save_flow_creates_new_playbook_when_none_exists(self, svc: PlaybookService) -> None:
-        flow = FlowPlaybook(
-            steps=[PlaybookStep(seq=1, instruction="Do thing", expected_after="Thing done")]
-        )
+        flow = FlowPlaybook(steps=[PlaybookStep(seq=1, instruction="Do thing", expected_after="Thing done")])
         path = svc.save_flow("new_source", "discovery", flow)
         assert path.exists()
         loaded = svc.load_site("new_source")
@@ -113,9 +111,7 @@ class TestSaveFlow:
 
     def test_save_flow_execution_with_task_type(self, svc: PlaybookService) -> None:
         svc.save_site(_make_site_playbook())
-        exec_flow = FlowPlaybook(
-            steps=[PlaybookStep(seq=1, instruction="Fill form", expected_after="Form submitted")]
-        )
+        exec_flow = FlowPlaybook(steps=[PlaybookStep(seq=1, instruction="Fill form", expected_after="Form submitted")])
         svc.save_flow("prolific", "execution", exec_flow, task_type="survey")
         loaded = svc.load_site("prolific")
         assert loaded is not None
