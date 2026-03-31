@@ -69,7 +69,7 @@ Phase 5 has no dependencies and can be implemented in parallel with Phase 1. Pha
 
 - **Title**: Create SitePlaybook Pydantic models with SCHEMA_VERSION
 - **File**: src/soren/models/site_playbook.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren developer, I want well-typed Pydantic models for site playbooks so that playbook YAML files are validated on load and the data structure is documented in code.
@@ -164,7 +164,7 @@ Phase 5 has no dependencies and can be implemented in parallel with Phase 1. Pha
 
 - **Title**: Create schema versioning infrastructure for playbook YAML files
 - **File**: src/soren/models/site_playbook.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator, I want my playbook YAML files to be automatically migrated when Soren updates its schema, so that learned playbook knowledge is never lost due to format changes.
@@ -245,7 +245,7 @@ Phase 5 has no dependencies and can be implemented in parallel with Phase 1. Pha
 
 - **Title**: Create HostPlaybook and BasePlaybook Pydantic models
 - **File**: src/soren/models/host_playbook.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren developer, I want typed models for host-level and base-level playbooks so that the cascading resolution chain can load and validate all three playbook tiers.
@@ -309,7 +309,7 @@ Phase 5 has no dependencies and can be implemented in parallel with Phase 1. Pha
 
 - **Title**: Extend PlaybooksConfig with tier directories and cascade settings
 - **File**: src/soren/models/playbooks.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 1
 
 - **User Story (business-facing)**: As a Soren operator, I want to configure playbook directory locations and cascade behavior in my settings.yaml, so that the playbook system is configurable without code changes.
