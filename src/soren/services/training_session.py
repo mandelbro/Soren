@@ -284,6 +284,7 @@ class TrainingSession:
             except Exception as exc:
                 await self._callbacks.show_error(f"CUA error (attempt {attempt}/{max_attempts}): {exc}")
                 if attempt < max_attempts:
+                    await self._callbacks.show_message("Type 'skip' to skip this step, or press Enter to retry.")
                     resp = await self._callbacks.get_instruction()
                     if resp.strip().lower() in ("skip", "s"):
                         return None, ""
@@ -377,11 +378,9 @@ class TrainingSession:
         apply_all()
         from agent import ComputerAgent
 
-        vlm_config = getattr(self._vm, "_config", None)
-        vlm_model = "mlx/mlx-community/UI-TARS-1.5-7B-6bit"
-        if vlm_config and hasattr(vlm_config, "display"):
-            # Use default; VLM model config is on SorenSettings, not VMConfig
-            pass
+        from soren.services.task_executor import DEFAULT_VLM_MODEL
+
+        vlm_model = DEFAULT_VLM_MODEL
 
         agent = ComputerAgent(
             model=vlm_model,

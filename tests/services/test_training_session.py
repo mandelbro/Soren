@@ -106,6 +106,37 @@ class TestFullLoopThreeStepsSave:
         assert session.state == TrainingState.DONE
 
 
+class TestConfirmStepDoneRecordsAndFinishes:
+    async def test_confirm_d_records_step_and_finishes(self) -> None:
+        """confirm_step returning 'd' records the current step then exits."""
+        instructions = iter(["Click login"])
+        cb = _mock_callbacks(
+            get_instruction=AsyncMock(side_effect=lambda: next(instructions)),
+            confirm_step=AsyncMock(return_value="d"),
+            get_expected_after=AsyncMock(return_value="Logged in"),
+        )
+        ps = _mock_playbook_service()
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=ps,
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+        )
+
+        with patch(_PATCH_APPLY_ALL), patch(_PATCH_CUA_AGENT) as MockAgent:
+            MockAgent.return_value = _patched_cua()
+            result = await session.run()
+
+        assert result is not None
+        assert len(result.steps) == 1
+        assert result.steps[0].instruction == "Click login"
+        ps.save_flow.assert_called_once()
+        assert session.state == TrainingState.DONE
+
+
 class TestDoneExitsStepLoop:
     async def test_done_immediately_saves(self) -> None:
         cb = _mock_callbacks(get_instruction=AsyncMock(return_value="/done"))
