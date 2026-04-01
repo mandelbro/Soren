@@ -77,12 +77,15 @@ class TaskExecutor:
         verification_passed: bool | None = None
         correction_applied: str | None = None
         playbook_content = self._load_playbook_content(task)
+        max_tokens_raw = getattr(self._settings.playbooks, "max_instruction_tokens", None)
+        max_tokens = max_tokens_raw if isinstance(max_tokens_raw, int) else None
         persona_context = PersonaContext.build(
             persona,
             task,
             playbook_content=playbook_content,
             memories=self._compose_memories(task, persona, memories),
             step_budget=self._step_budget,
+            max_instruction_tokens=max_tokens,
         )
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
@@ -166,12 +169,15 @@ class TaskExecutor:
         effective_budget = min(flow.max_steps, self._step_budget) if flow else self._step_budget
         detector = StuckDetector(step_budget=effective_budget)
         playbook_content = self._load_playbook_content(task)
+        max_tokens_raw = getattr(self._settings.playbooks, "max_instruction_tokens", None)
+        max_tokens = max_tokens_raw if isinstance(max_tokens_raw, int) else None
         persona_context = PersonaContext.build(
             persona,
             task,
             playbook_content=playbook_content,
             memories=self._compose_memories(task, persona, memories),
             step_budget=effective_budget,
+            max_instruction_tokens=max_tokens,
         )
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)

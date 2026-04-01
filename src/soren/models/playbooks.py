@@ -15,3 +15,6 @@ class PlaybooksConfig(BaseModel):
     base_playbooks_dir: str = Field(default="data/playbooks/base", description="Directory for built-in base playbooks")
     cascade_enabled: bool = Field(default=True, description="Enable cascading resolution (site > host > base)")
     auto_learn_host: bool = Field(default=True, description="Auto-generate host playbooks from successful runs")
+    max_instruction_tokens: int = Field(
+        default=4000, description="Max token estimate for playbook instructions in CUA prompt"
+    )

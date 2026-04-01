@@ -96,7 +96,7 @@ These tasks fill gaps identified during the principal-engineer technical review.
 
 - **Title**: Add max_instruction_tokens safety valve to PersonaContext
 - **File**: src/soren/services/persona_context.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren developer, I want the persona context builder to truncate cascading playbook instructions when they exceed a configurable token limit, so that the CUA agent's context window is not overwhelmed.
