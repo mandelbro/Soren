@@ -6,6 +6,7 @@ Verifies the InterventionCallbacks protocol and dispatch logic:
 - "skip" response skips source and logs stuck_skipped
 - "abort" response aborts cycle gracefully
 - Unattended mode (no callbacks) does not prompt
+- CLIInterventionCallbacks with mocked Rich prompt
 """
 
 from __future__ import annotations
@@ -15,33 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from soren.models.persona import Persona, Traits
 from soren.models.session import TaskResult
-from soren.models.task import Task
-from soren.services.meta_agent import InterventionCallbacks, SorenMetaAgent
-
-
-def _make_task(
-    task_id: str = "task-1",
-    source_name: str = "TestSource",
-    task_type: str = "survey",
-    source_url: str = "https://example.com",
-) -> Task:
-    return Task(
-        id=task_id,
-        dedup_key="test:1:persona",
-        title="Test Task",
-        description="Complete the survey",
-        task_type=task_type,
-        source_name=source_name,
-        source_url=source_url,
-        persona_id="p1",
-        created_at="2025-01-01T00:00:00Z",
-    )
-
-
-def _make_persona() -> Persona:
-    return Persona(id="p1", name="Test", traits=Traits(), enabled=True)
+from tests.services.conftest import build_meta_agent
 
 
 class _StubInterventionCallbacks:
@@ -63,88 +39,17 @@ class _StubInterventionCallbacks:
         return self._response
 
 
-def _build_agent(
-    *,
-    should_offer_training: bool = True,
-    task_result: TaskResult | None = None,
-    intervention_callbacks: InterventionCallbacks | None = None,
-    training_callbacks: Any = None,
-    playbook_service: MagicMock | None = None,
-) -> SorenMetaAgent:
-    """Build a SorenMetaAgent with all dependencies mocked."""
-    settings = MagicMock()
-    settings.playbooks.write_back = True
-    settings.scheduler.retry_backoff_minutes = 5
-    settings.scheduler.stuck_auto_skip_timeout = 0.01  # Fast for tests
-
-    db = MagicMock()
-    llm = MagicMock()
-    llm.get_telemetry.return_value = {}
-
-    vm = MagicMock()
-    vm.vm_name = "test-vm"
-    vm.ensure_ready = AsyncMock()
-    vm.connect_computer = AsyncMock(return_value=MagicMock())
-    vm.reset_browser_state = AsyncMock()
-    vm.notify_cycle_complete.return_value = False
-
-    backlog = MagicMock()
-    backlog.get_eligible_tasks = AsyncMock(return_value=[_make_task()])
-    backlog.mark_in_progress = AsyncMock()
-    backlog.mark_completed = AsyncMock()
-    backlog.mark_failed = AsyncMock()
-    backlog.get_summary = AsyncMock(return_value=MagicMock())
-    backlog.list_tasks = AsyncMock(return_value=[])
-
-    discovery = MagicMock()
-
-    executor = MagicMock()
-    result = task_result or TaskResult(success=False, error="Stuck: action loop detected")
-    executor.execute_with_learning = AsyncMock(return_value=(result, should_offer_training))
-
-    persona = _make_persona()
-    persona_loader = MagicMock(return_value=[persona])
-
-    if playbook_service is None:
-        playbook_service = MagicMock()
-        playbook_service.write_back = AsyncMock(return_value=MagicMock(dry_run=False, preview=None))
-        playbook_service.load_site.return_value = None
-        playbook_service.save_flow.return_value = MagicMock()
-        playbook_service.update_confidence = MagicMock()
-        playbook_service.update_host_confidence = MagicMock()
-
-    agent = SorenMetaAgent(
-        settings=settings,
-        db=db,
-        llm=llm,
-        vm=vm,
-        backlog=backlog,
-        discovery=discovery,
-        executor=executor,
-        persona_loader=persona_loader,
-        playbook_service=playbook_service,
-        intervention_callbacks=intervention_callbacks,
-        training_callbacks=training_callbacks,
-    )
-    # Mock internal services
-    agent._memory_service = MagicMock()
-    agent._memory_service.recall = AsyncMock(return_value=[])
-    agent._memory_service.store = AsyncMock()
-    agent._memory_service.prune = AsyncMock(return_value=0)
-    agent._memory_service.clear_session = MagicMock()
-    agent._scorer = MagicMock()
-    agent._scorer.score.return_value = 1.0
-
-    return agent
-
-
 class TestInterventionPromptShownWhenStuck:
     """Intervention callback is invoked when should_offer_training=True and callbacks provided."""
 
     @pytest.mark.asyncio
     async def test_on_stuck_called_when_stuck_and_callbacks_provided(self) -> None:
         callbacks = _StubInterventionCallbacks(response="skip")
-        agent = _build_agent(should_offer_training=True, intervention_callbacks=callbacks)
+        agent = build_meta_agent(
+            should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
+            intervention_callbacks=callbacks,
+        )
 
         await agent.run_cycle()
 
@@ -161,8 +66,9 @@ class TestTrainResponseTriggersTraining:
     async def test_train_response_invokes_training_session(self) -> None:
         callbacks = _StubInterventionCallbacks(response="train")
         mock_training_callbacks = MagicMock()
-        agent = _build_agent(
+        agent = build_meta_agent(
             should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
             intervention_callbacks=callbacks,
             training_callbacks=mock_training_callbacks,
         )
@@ -176,7 +82,6 @@ class TestTrainResponseTriggersTraining:
 
             mock_session_cls.assert_called_once()
             mock_session.run.assert_called_once()
-            # Verify correct source_name passed
             call_kwargs = mock_session_cls.call_args[1]
             assert call_kwargs["source_name"] == "TestSource"
             assert call_kwargs["flow_type"] == "execution"
@@ -188,7 +93,11 @@ class TestSkipResponseLogsStuckSkipped:
     @pytest.mark.asyncio
     async def test_skip_response_logs_stuck_source(self) -> None:
         callbacks = _StubInterventionCallbacks(response="skip")
-        agent = _build_agent(should_offer_training=True, intervention_callbacks=callbacks)
+        agent = build_meta_agent(
+            should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
+            intervention_callbacks=callbacks,
+        )
 
         report = await agent.run_cycle()
 
@@ -200,19 +109,48 @@ class TestSkipResponseLogsStuckSkipped:
 
 
 class TestAbortResponseAbortsCycle:
-    """'abort' response aborts cycle gracefully."""
+    """'abort' response aborts cycle gracefully and logs stuck source."""
 
     @pytest.mark.asyncio
     async def test_abort_response_returns_report_early(self) -> None:
         callbacks = _StubInterventionCallbacks(response="abort")
-        agent = _build_agent(should_offer_training=True, intervention_callbacks=callbacks)
+        agent = build_meta_agent(
+            should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
+            intervention_callbacks=callbacks,
+        )
 
         report = await agent.run_cycle()
 
         assert report.stuck_detected is True
         assert report.completed_at != ""
-        # Task result should still be present
         assert report.task_result is not None
+        # Abort should still log the stuck source for report consistency
+        assert len(report.stuck_sources) == 1
+        assert report.stuck_sources[0]["source_name"] == "TestSource"
+
+
+class TestTrainResponseLogsStuckSource:
+    """'train' response logs stuck source in report for consistency."""
+
+    @pytest.mark.asyncio
+    async def test_train_response_logs_stuck_source(self) -> None:
+        callbacks = _StubInterventionCallbacks(response="train")
+        mock_training_callbacks = MagicMock()
+        agent = build_meta_agent(
+            should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
+            intervention_callbacks=callbacks,
+            training_callbacks=mock_training_callbacks,
+        )
+
+        with patch("soren.services.training_session.TrainingSession") as mock_cls:
+            mock_cls.return_value = MagicMock(run=AsyncMock(return_value=None))
+            report = await agent.run_cycle()
+
+        assert report.stuck_detected is True
+        assert len(report.stuck_sources) == 1
+        assert report.stuck_sources[0]["source_name"] == "TestSource"
 
 
 class TestUnattendedModeDoesNotPrompt:
@@ -220,13 +158,16 @@ class TestUnattendedModeDoesNotPrompt:
 
     @pytest.mark.asyncio
     async def test_no_callbacks_means_no_prompt(self) -> None:
-        agent = _build_agent(should_offer_training=True, intervention_callbacks=None)
+        agent = build_meta_agent(
+            should_offer_training=True,
+            task_result=TaskResult(success=False, error="Stuck: action loop detected"),
+            intervention_callbacks=None,
+        )
 
-        report = await agent.run_cycle()
+        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock):
+            report = await agent.run_cycle()
 
-        # Should still detect stuck condition
         assert report.stuck_detected is True
-        # But no intervention prompt was shown (unattended auto-skip handles it)
 
 
 class TestNoInterventionWhenNotStuck:
@@ -235,7 +176,7 @@ class TestNoInterventionWhenNotStuck:
     @pytest.mark.asyncio
     async def test_callbacks_not_called_when_not_stuck(self) -> None:
         callbacks = _StubInterventionCallbacks(response="skip")
-        agent = _build_agent(
+        agent = build_meta_agent(
             should_offer_training=False,
             task_result=TaskResult(success=True, steps_taken=3),
             intervention_callbacks=callbacks,
@@ -244,3 +185,34 @@ class TestNoInterventionWhenNotStuck:
         await agent.run_cycle()
 
         assert len(callbacks.on_stuck_calls) == 0
+
+
+class TestCLIInterventionCallbacks:
+    """CLIInterventionCallbacks dispatches Rich prompt and returns correct action."""
+
+    @pytest.mark.asyncio
+    async def test_skip_choice_returns_skip(self) -> None:
+        from soren.cli.cycle import CLIInterventionCallbacks
+
+        callbacks = CLIInterventionCallbacks()
+        with patch("soren.cli.cycle.Prompt.ask", return_value="s"):
+            result = await callbacks.on_stuck("SomeSource", "Action loop", {"steps_taken": 12})
+        assert result == "skip"
+
+    @pytest.mark.asyncio
+    async def test_train_choice_returns_train(self) -> None:
+        from soren.cli.cycle import CLIInterventionCallbacks
+
+        callbacks = CLIInterventionCallbacks()
+        with patch("soren.cli.cycle.Prompt.ask", return_value="t"):
+            result = await callbacks.on_stuck("SomeSource", "No progress", {})
+        assert result == "train"
+
+    @pytest.mark.asyncio
+    async def test_abort_choice_returns_abort(self) -> None:
+        from soren.cli.cycle import CLIInterventionCallbacks
+
+        callbacks = CLIInterventionCallbacks()
+        with patch("soren.cli.cycle.Prompt.ask", return_value="a"):
+            result = await callbacks.on_stuck("SomeSource", "Timeout", {})
+        assert result == "abort"

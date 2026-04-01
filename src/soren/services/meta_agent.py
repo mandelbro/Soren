@@ -408,6 +408,14 @@ class SorenMetaAgent:
                         logger.exception("Intervention callback failed; treating as skip")
                         choice = "skip"
 
+                    stuck_entry = {
+                        "source_name": task.source_name or "unknown",
+                        "stuck_reason": stuck_reason,
+                        "skipped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "auto_skipped": False,
+                    }
+                    report.stuck_sources.append(stuck_entry)
+
                     if choice == "train":
                         await self._handle_train_intervention(task)
                     elif choice == "abort":
@@ -415,18 +423,11 @@ class SorenMetaAgent:
                         report.task_result = task_result
                         report.total_agent_steps = (task_result.steps_taken or 0) if task_result else 0
                         return report
-                    else:
-                        # "skip" — log and continue
-                        report.stuck_sources.append(
-                            {
-                                "source_name": task.source_name or "unknown",
-                                "stuck_reason": stuck_reason,
-                                "skipped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                "auto_skipped": False,
-                            }
-                        )
+                    # "skip" falls through to normal finalization
                 else:
-                    # Unattended mode: auto-skip after timeout
+                    # Unattended mode: auto-skip after timeout.
+                    # The sleep window allows external monitoring/alerting to react before
+                    # the source is skipped and the cycle moves on.
                     timeout = getattr(self._settings.scheduler, "stuck_auto_skip_timeout", 30.0)
                     logger.info(
                         "Source '%s' is stuck (%s). Auto-skipping after %.1fs timeout (unattended mode).",
