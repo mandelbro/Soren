@@ -165,6 +165,22 @@ class TestNoneLimitNoTruncation:
         assert "word word word" in result
 
 
+class TestMemoriesNotDroppedWhenPlaybookTruncated:
+    """Memories survive when playbook is truncated (uses post-truncation budget)."""
+
+    def test_memories_preserved_after_playbook_truncation(self) -> None:
+        base = "## General Guidelines\n" + _long_text(300)  # Will be truncated
+        memories = ["Short memory entry."]
+        result = PersonaContext.build(
+            _make_persona(),
+            _make_task(),
+            playbook_content=base,
+            memories=memories,
+            max_instruction_tokens=50,
+        )
+        assert "Short memory entry." in result
+
+
 class TestCustomTokenCounter:
     """Custom token_counter function is used when provided."""
 

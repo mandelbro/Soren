@@ -45,7 +45,6 @@ TRAIT_DIRECTIVES: dict[str, tuple[str, str, str]] = {
 # Sections matching these prefixes are truncated first when exceeding token limit.
 _TRUNCATION_PRIORITY = [
     "## General Guidelines",  # Base playbook (lowest priority)
-    "Relevant memories",  # Memory entries
     "## Host Instructions",  # Host playbook
     "## Site-Specific",  # Site playbook (highest priority, truncated last)
 ]
@@ -252,22 +251,22 @@ class PersonaContext:
             sections.append("Task context:\n" + "\n".join(task_parts))
 
         # Playbook integration (with optional token limit truncation)
+        truncated_playbook = ""
         if playbook_content and playbook_content.strip():
-            content = playbook_content.strip()
+            truncated_playbook = playbook_content.strip()
             if max_instruction_tokens is not None:
-                content = _truncate_playbook_content(content, max_instruction_tokens, counter)
-            sections.append("Playbook instructions (follow in order of specificity):\n" + content)
+                truncated_playbook = _truncate_playbook_content(truncated_playbook, max_instruction_tokens, counter)
+            sections.append("Playbook instructions (follow in order of specificity):\n" + truncated_playbook)
 
         # Memory integration
         if memories and any(m.strip() for m in memories):
             mem_text = "\n".join(m.strip() for m in memories if m.strip())
             if max_instruction_tokens is not None:
-                # Memories are lower priority than site playbook but higher than base
                 mem_tokens = counter(mem_text)
-                playbook_tokens = counter(playbook_content or "") if playbook_content else 0
+                # Use post-truncation playbook size for budget calculation
+                playbook_tokens = counter(truncated_playbook) if truncated_playbook else 0
                 total = mem_tokens + playbook_tokens
                 if total > max_instruction_tokens and mem_tokens > 0:
-                    # Truncate memories if combined total exceeds limit
                     available = max(0, max_instruction_tokens - playbook_tokens)
                     if available > 0:
                         char_limit = available * 4
