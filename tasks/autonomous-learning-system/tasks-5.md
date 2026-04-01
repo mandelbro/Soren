@@ -16,7 +16,7 @@ These tasks fill gaps identified during the principal-engineer technical review.
 
 - **Title**: Add stuck intervention prompt to cycle run
 - **File**: src/soren/services/meta_agent.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 3
 
 - **User Story (business-facing)**: As a Soren operator, I want to be prompted with `[t] Train / [s] Skip / [a] Abort` when the agent gets stuck during cycle run, so that I can choose to train the agent, skip the stuck source, or abort the cycle.
@@ -168,7 +168,7 @@ These tasks fill gaps identified during the principal-engineer technical review.
 
 - **Title**: Add unattended mode stuck auto-skip with configurable timeout
 - **File**: src/soren/services/meta_agent.py
-- **Complete**: [ ]
+- **Complete**: [x]
 - **Sprint Points**: 2
 
 - **User Story (business-facing)**: As a Soren operator running cycles unattended, I want stuck sources to be automatically skipped after a configurable timeout, so that the cycle continues to other sources without human intervention.

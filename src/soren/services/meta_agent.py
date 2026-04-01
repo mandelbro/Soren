@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import psutil
@@ -18,6 +20,9 @@ from soren.services.report_writer import write_report
 from soren.services.retry_policy import classify_failure
 
 MEMORY_ABORT_THRESHOLD_PCT = 85.0
+UNATTENDED_CONFIDENCE_FLOOR = 0.1
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from soren.models.persona import Persona
@@ -29,7 +34,22 @@ if TYPE_CHECKING:
     from soren.services.task_backlog import TaskBacklog
     from soren.services.task_discovery import TaskDiscovery
     from soren.services.task_executor import TaskExecutor
+    from soren.services.training_session import TrainingCallbacks
     from soren.services.vm_manager import VMManager
+
+
+class InterventionCallbacks(Protocol):
+    """Callback protocol for stuck intervention during cycle run.
+
+    Decouples terminal I/O from orchestration logic for testability.
+    """
+
+    async def on_stuck(
+        self,
+        source_name: str,
+        stuck_reason: str,
+        cycle_context: dict[str, Any],
+    ) -> Literal["train", "skip", "abort"]: ...
 
 
 class SorenMetaAgent:
@@ -50,6 +70,8 @@ class SorenMetaAgent:
         report_dir: Path | None = None,
         playbook_service: PlaybookService | None = None,
         dry_run: bool = False,
+        intervention_callbacks: InterventionCallbacks | None = None,
+        training_callbacks: TrainingCallbacks | None = None,
     ) -> None:
         self._settings = settings
         self._db = db
@@ -65,6 +87,8 @@ class SorenMetaAgent:
         self._report_dir = Path(report_dir or "data/reports")
         self._memory_guard = MemoryGuard(settings.llm)
         self._memory_service = MemoryService(db)
+        self._intervention_callbacks = intervention_callbacks
+        self._training_callbacks = training_callbacks
         from soren.services.priority_scorer import TaskPriorityScorer
 
         self._scorer = TaskPriorityScorer(settings)
@@ -75,6 +99,31 @@ class SorenMetaAgent:
             return psutil.virtual_memory().percent >= MEMORY_ABORT_THRESHOLD_PCT
         except Exception:
             return False
+
+    def _load_last_report(self) -> CycleReport | None:
+        """Load the most recent cycle report via the latest.json symlink."""
+        latest = self._report_dir / "latest.json"
+        if not latest.exists():
+            return None
+        try:
+            return CycleReport.model_validate_json(latest.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def _warn_previous_stuck_sources(self) -> None:
+        """Warn about sources that were auto-skipped in the last unattended run."""
+        last_report = self._load_last_report()
+        if last_report is None:
+            return
+        auto_skipped = [s for s in last_report.stuck_sources if s.get("auto_skipped")]
+        if not auto_skipped:
+            return
+        names = [s.get("source_name", "unknown") for s in auto_skipped]
+        logger.warning(
+            "The following sources were auto-skipped in the last unattended run: %s. "
+            "Consider running `soren train <source>` for these.",
+            ", ".join(names),
+        )
 
     async def run_cycle(self) -> CycleReport:
         """Execute full lifecycle: init → assess → discover (if empty) → select → execute → finalize."""
@@ -105,6 +154,10 @@ class SorenMetaAgent:
                 report.completed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 report.total_duration_seconds = time.perf_counter() - start_ts
                 return report
+
+            # 0b. Warn about previously stuck-skipped sources (attended mode only)
+            if self._intervention_callbacks:
+                self._warn_previous_stuck_sources()
 
             # 1. Init
             personas = self._persona_loader()
@@ -192,6 +245,10 @@ class SorenMetaAgent:
             except Exception as e:
                 task_result = TaskResult(success=False, error=str(e))
                 should_offer_training = False
+
+            # Determine stuck handling mode for confidence floor
+            is_unattended_stuck = should_offer_training and self._intervention_callbacks is None
+            confidence_floor = UNATTENDED_CONFIDENCE_FLOOR if is_unattended_stuck else 0.0
 
             # 6. Finalize
             if task_result and task_result.success:
@@ -304,11 +361,15 @@ class SorenMetaAgent:
                     reason,
                     getattr(self._settings.scheduler, "retry_backoff_minutes", None),
                 )
-                # Update confidence on failure
+                # Update confidence on failure (with floor for unattended auto-skip)
                 if self._playbook_service and task.source_name:
                     try:
                         self._playbook_service.update_confidence(
-                            task.source_name, "execution", success=False, task_type=task.task_type
+                            task.source_name,
+                            "execution",
+                            success=False,
+                            task_type=task.task_type,
+                            min_confidence=confidence_floor,
                         )
                     except Exception:
                         pass
@@ -322,9 +383,67 @@ class SorenMetaAgent:
                         except Exception:
                             pass
 
-            # Log stuck condition and mark report
+            # 7. Stuck intervention (Task 021 + Task 023)
             if should_offer_training:
                 report.stuck_detected = True
+                stuck_reason = (task_result.error if task_result else None) or "Unknown stuck condition"
+
+                if self._intervention_callbacks:
+                    # Attended mode: prompt user
+                    cycle_context = {
+                        "task_id": task.id,
+                        "source_name": task.source_name,
+                        "source_url": task.source_url,
+                        "task_type": task.task_type,
+                        "steps_taken": task_result.steps_taken if task_result else 0,
+                        "error": task_result.error if task_result else None,
+                    }
+                    try:
+                        choice = await self._intervention_callbacks.on_stuck(
+                            source_name=task.source_name or "unknown",
+                            stuck_reason=stuck_reason,
+                            cycle_context=cycle_context,
+                        )
+                    except Exception:
+                        logger.exception("Intervention callback failed; treating as skip")
+                        choice = "skip"
+
+                    stuck_entry = {
+                        "source_name": task.source_name or "unknown",
+                        "stuck_reason": stuck_reason,
+                        "skipped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "auto_skipped": False,
+                    }
+                    report.stuck_sources.append(stuck_entry)
+
+                    if choice == "train":
+                        await self._handle_train_intervention(task)
+                    elif choice == "abort":
+                        report.task_executed_id = task.id
+                        report.task_result = task_result
+                        report.total_agent_steps = (task_result.steps_taken or 0) if task_result else 0
+                        return report
+                    # "skip" falls through to normal finalization
+                else:
+                    # Unattended mode: auto-skip after timeout.
+                    # The sleep window allows external monitoring/alerting to react before
+                    # the source is skipped and the cycle moves on.
+                    timeout = getattr(self._settings.scheduler, "stuck_auto_skip_timeout", 30.0)
+                    logger.info(
+                        "Source '%s' is stuck (%s). Auto-skipping after %.1fs timeout (unattended mode).",
+                        task.source_name or "unknown",
+                        stuck_reason,
+                        timeout,
+                    )
+                    await asyncio.sleep(timeout)
+                    report.stuck_sources.append(
+                        {
+                            "source_name": task.source_name or "unknown",
+                            "stuck_reason": stuck_reason,
+                            "skipped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "auto_skipped": True,
+                        }
+                    )
 
             report.task_executed_id = task.id
             report.task_result = task_result
@@ -386,6 +505,28 @@ class SorenMetaAgent:
                 pass
 
         return report
+
+    async def _handle_train_intervention(self, task: Task) -> None:
+        """Invoke a training session for the stuck source and flow."""
+        if not self._training_callbacks or not self._playbook_service:
+            logger.warning("Training requested but no training_callbacks or playbook_service available; skipping.")
+            return
+        try:
+            from soren.services.training_session import TrainingSession
+
+            session = TrainingSession(
+                vm_manager=self._vm,
+                playbook_service=self._playbook_service,
+                llm=self._llm,
+                callbacks=self._training_callbacks,
+                source_name=task.source_name or "unknown",
+                flow_type="execution",
+                source_url=task.source_url or "",
+                task_type=task.task_type,
+            )
+            await session.run()
+        except Exception:
+            logger.exception("Training session failed for source '%s'", task.source_name)
 
     _TAB_STEP_TYPES = {"tab_switch", "new_tab", "open_tab"}
 

@@ -2,9 +2,46 @@
 
 import asyncio
 from pathlib import Path
+from typing import Any, Literal
 
 import click
 from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+
+from soren.services.meta_agent import InterventionCallbacks
+
+
+class CLIInterventionCallbacks(InterventionCallbacks):
+    """Rich-based interactive intervention prompt for attended mode."""
+
+    _CHOICE_MAP = {"t": "train", "s": "skip", "a": "abort"}
+
+    def __init__(self, console: Console | None = None) -> None:
+        self._console = console or Console()
+
+    async def on_stuck(
+        self,
+        source_name: str,
+        stuck_reason: str,
+        cycle_context: dict[str, Any],
+    ) -> Literal["train", "skip", "abort"]:
+        self._console.print(
+            Panel(
+                f"[bold red]Source stuck:[/bold red] {source_name}\n"
+                f"[dim]Reason:[/dim] {stuck_reason}\n"
+                f"[dim]Steps taken:[/dim] {cycle_context.get('steps_taken', '?')}",
+                title="Stuck Detected",
+                border_style="red",
+            )
+        )
+        choice = Prompt.ask(
+            "[bold][t][/] Train  [bold][s][/] Skip  [bold][a][/] Abort",
+            choices=["t", "s", "a"],
+            default="s",
+            console=self._console,
+        )
+        return self._CHOICE_MAP.get(choice, "skip")
 
 
 @click.group()
@@ -15,9 +52,11 @@ def cycle():
 @cycle.command("run")
 @click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
 @click.option("--dry-run", is_flag=True, help="Preview playbook write-back without writing to disk")
-def cycle_run(config, dry_run):
+@click.option("--unattended", is_flag=True, help="Run without interactive prompts (auto-skip stuck sources)")
+def cycle_run(config, dry_run, unattended):
     """Run a full Soren cycle: discover (if needed) -> execute one task -> finalize."""
 
+    from soren.cli.train import RichTrainingCallbacks
     from soren.services.config_loader import load_settings
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
@@ -48,6 +87,10 @@ def cycle_run(config, dry_run):
         def load_personas():
             return load_all(get_personas_dir())
 
+        # Set up intervention callbacks for attended mode
+        intervention_cbs = None if unattended else CLIInterventionCallbacks()
+        training_cbs = None if unattended else RichTrainingCallbacks()
+
         agent = SorenMetaAgent(
             settings=settings,
             db=db,
@@ -60,6 +103,8 @@ def cycle_run(config, dry_run):
             report_dir=Path("data/reports"),
             playbook_service=playbook_svc,
             dry_run=dry_run,
+            intervention_callbacks=intervention_cbs,
+            training_callbacks=training_cbs,
         )
 
         try:
@@ -71,6 +116,13 @@ def cycle_run(config, dry_run):
                 console = Console()
                 console.print("\n[dim]Playbook preview (--dry-run):[/dim]")
                 console.print(report.playbook_preview[:2000] + ("..." if len(report.playbook_preview) > 2000 else ""))
+            if report.stuck_sources:
+                console = Console()
+                for src in report.stuck_sources:
+                    mode = "auto-skipped" if src.get("auto_skipped") else "skipped"
+                    console.print(
+                        f"[yellow]Source {mode}: {src.get('source_name')} ({src.get('stuck_reason')})[/yellow]"
+                    )
             click.echo("Cycle complete.")
         except LumeConnectionError as e:
             click.echo(str(e), err=True)

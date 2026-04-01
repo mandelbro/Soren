@@ -291,8 +291,13 @@ class PlaybookService:
         flow_type: str,
         success: bool,
         task_type: str | None = None,
+        min_confidence: float = 0.0,
     ) -> None:
-        """Update confidence and consecutive_successes for a flow after execution."""
+        """Update confidence and consecutive_successes for a flow after execution.
+
+        Args:
+            min_confidence: Floor for confidence decrement (e.g. 0.1 for unattended auto-skip).
+        """
         site = self.load_site(source_name)
         if site is None:
             return
@@ -314,7 +319,7 @@ class PlaybookService:
             flow.verified_at = datetime.now(UTC)
         else:
             flow.consecutive_successes = 0
-            flow.confidence = max(0.0, flow.confidence - 0.2)
+            flow.confidence = max(min_confidence, flow.confidence - 0.2)
 
         self.save_site(site)
 
