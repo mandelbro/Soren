@@ -101,5 +101,6 @@ class CycleReport(BaseModel):
     screenshots: list[str] = Field(default_factory=list)
     playbook_preview: str | None = None
     stuck_detected: bool = False
+    stuck_sources: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = {"from_attributes": True, "extra": "ignore"}

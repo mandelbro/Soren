@@ -231,7 +231,7 @@ class TestConfidenceUpdatesOnFailure:
         await agent.run_cycle()
 
         playbook_service.update_confidence.assert_called_once_with(
-            "TestSource", "execution", success=False, task_type="survey"
+            "TestSource", "execution", success=False, task_type="survey", min_confidence=0.0
         )
 
 

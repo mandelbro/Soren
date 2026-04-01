@@ -38,5 +38,9 @@ class SchedulerConfig(BaseModel):
         default_factory=PriorityWeights,
         description="Weights for composite priority scoring",
     )
+    stuck_auto_skip_timeout: float = Field(
+        default=30.0,
+        description="Seconds before auto-skipping stuck source in unattended mode",
+    )
 
     model_config = {"from_attributes": True, "extra": "ignore"}
