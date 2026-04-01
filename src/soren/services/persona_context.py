@@ -1,9 +1,16 @@
 """PersonaContext builder for ComputerAgent instructions."""
 
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+
 from soren.models.persona import Persona
 from soren.models.task import Task
 
 DEFAULT_STEP_BUDGET = 50
+
+logger = logging.getLogger(__name__)
 
 # Big Five trait name -> (low, medium, high) behavioral directives
 TRAIT_DIRECTIVES: dict[str, tuple[str, str, str]] = {
@@ -33,6 +40,20 @@ TRAIT_DIRECTIVES: dict[str, tuple[str, str, str]] = {
         "Be cautious under uncertainty; verify before acting when the outcome is unclear.",
     ),
 }
+
+# Playbook section headers in truncation priority order (lowest priority first).
+# Sections matching these prefixes are truncated first when exceeding token limit.
+_TRUNCATION_PRIORITY = [
+    "## General Guidelines",  # Base playbook (lowest priority)
+    "Relevant memories",  # Memory entries
+    "## Host Instructions",  # Host playbook
+    "## Site-Specific",  # Site playbook (highest priority, truncated last)
+]
+
+
+def _default_token_count(text: str) -> int:
+    """Approximate token count using len(text) // 4 heuristic."""
+    return len(text) // 4
 
 
 def _trait_level(value: float) -> str:
@@ -115,6 +136,62 @@ def _build_response_style(persona: Persona) -> str:
     return " ".join(parts) if parts else ""
 
 
+def _truncate_playbook_content(
+    playbook_content: str,
+    max_tokens: int,
+    token_counter: Callable[[str], int],
+) -> str:
+    """Truncate playbook content by removing lowest-priority sections first.
+
+    Priority order (lowest truncated first):
+    1. Base playbook (General Guidelines)
+    2. Memory entries
+    3. Host playbook (Host Instructions)
+    4. Site playbook (Site-Specific) — truncated last
+
+    Returns the truncated content with a marker if truncation occurred.
+    """
+    current_tokens = token_counter(playbook_content)
+    if current_tokens <= max_tokens:
+        return playbook_content
+
+    original_tokens = current_tokens
+    lines = playbook_content.split("\n")
+
+    # Try removing sections in priority order (lowest priority first)
+    for prefix in _TRUNCATION_PRIORITY:
+        if current_tokens <= max_tokens:
+            break
+        # Find and remove the section matching this prefix
+        filtered: list[str] = []
+        in_section = False
+        for line in lines:
+            if line.startswith(prefix):
+                in_section = True
+                continue
+            if in_section and line.startswith("## "):
+                in_section = False
+            if not in_section:
+                filtered.append(line)
+        if len(filtered) < len(lines):
+            lines = filtered
+            current_tokens = token_counter("\n".join(lines))
+
+    result = "\n".join(lines).strip()
+    if current_tokens > max_tokens:
+        # Hard truncate as last resort (keep first max_tokens * 4 chars)
+        char_limit = max_tokens * 4
+        result = result[:char_limit].rsplit(" ", 1)[0]
+
+    logger.warning(
+        "Playbook instructions truncated from ~%d to ~%d tokens (limit: %d)",
+        original_tokens,
+        token_counter(result),
+        max_tokens,
+    )
+    return result + "\n[Note: Some lower-priority instructions were truncated to fit context window]"
+
+
 class PersonaContext:
     """Builds ComputerAgent instructions from persona and task."""
 
@@ -125,6 +202,8 @@ class PersonaContext:
         playbook_content: str | None = None,
         memories: list[str] | None = None,
         step_budget: int = DEFAULT_STEP_BUDGET,
+        max_instruction_tokens: int | None = None,
+        token_counter: Callable[[str], int] | None = None,
     ) -> str:
         """Assemble the full instructions string for ComputerAgent.
 
@@ -134,10 +213,16 @@ class PersonaContext:
             playbook_content: Optional service playbook instructions.
             memories: Optional relevant memory recall content.
             step_budget: Maximum steps for task completion.
+            max_instruction_tokens: Optional token limit for playbook instructions.
+                When set, cascading sections are truncated by priority.
+                None = no limit (backward compatible default).
+            token_counter: Optional function to count tokens in text.
+                Defaults to len(text) // 4 heuristic.
 
         Returns:
             Coherent instruction string suitable for ComputerAgent(instructions=...).
         """
+        counter = token_counter or _default_token_count
         sections: list[str] = []
 
         # Demographic identity
@@ -166,14 +251,31 @@ class PersonaContext:
         if task_parts:
             sections.append("Task context:\n" + "\n".join(task_parts))
 
-        # Playbook integration
+        # Playbook integration (with optional token limit truncation)
         if playbook_content and playbook_content.strip():
-            sections.append("Playbook instructions (follow in order of specificity):\n" + playbook_content.strip())
+            content = playbook_content.strip()
+            if max_instruction_tokens is not None:
+                content = _truncate_playbook_content(content, max_instruction_tokens, counter)
+            sections.append("Playbook instructions (follow in order of specificity):\n" + content)
 
         # Memory integration
         if memories and any(m.strip() for m in memories):
             mem_text = "\n".join(m.strip() for m in memories if m.strip())
-            sections.append("Relevant memories:\n" + mem_text)
+            if max_instruction_tokens is not None:
+                # Memories are lower priority than site playbook but higher than base
+                mem_tokens = counter(mem_text)
+                playbook_tokens = counter(playbook_content or "") if playbook_content else 0
+                total = mem_tokens + playbook_tokens
+                if total > max_instruction_tokens and mem_tokens > 0:
+                    # Truncate memories if combined total exceeds limit
+                    available = max(0, max_instruction_tokens - playbook_tokens)
+                    if available > 0:
+                        char_limit = available * 4
+                        mem_text = mem_text[:char_limit].rsplit("\n", 1)[0]
+                    else:
+                        mem_text = ""
+            if mem_text.strip():
+                sections.append("Relevant memories:\n" + mem_text)
 
         # Step budget
         sections.append(f"You have a maximum of {step_budget} steps to complete this task.")
