@@ -76,6 +76,18 @@ class LumeClient:
                 cause=e,
             ) from e
 
+    async def _request_dict(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Execute request for endpoints that return a JSON object."""
+        result = await self._request(method, path, json=json, params=params)
+        return result if isinstance(result, dict) else {}
+
     async def list_vms(self, storage: str | None = None) -> list[dict[str, Any]]:
         """List all VMs."""
         params = {"storage": storage} if storage else None
@@ -85,11 +97,11 @@ class LumeClient:
     async def get_vm(self, name: str, storage: str | None = None) -> dict[str, Any]:
         """Get VM details by name."""
         params = {"storage": storage} if storage else None
-        return await self._request("GET", f"/lume/vms/{name}", params=params)
+        return await self._request_dict("GET", f"/lume/vms/{name}", params=params)
 
     async def create_vm(self, config: dict[str, Any]) -> dict[str, Any]:
         """Create a new VM (async, returns 202)."""
-        return await self._request("POST", "/lume/vms", json=config)
+        return await self._request_dict("POST", "/lume/vms", json=config)
 
     async def delete_vm(self, name: str, storage: str | None = None) -> dict[str, Any]:
         """Delete a VM and its files."""
@@ -98,7 +110,7 @@ class LumeClient:
         if params:
             qs = "&".join(f"{k}={v}" for k, v in params.items())
             url = f"{url}?{qs}"
-        return await self._request("DELETE", f"/lume/vms/{name}", params=params)
+        return await self._request_dict("DELETE", f"/lume/vms/{name}", params=params)
 
     async def clone_vm(
         self,
@@ -114,7 +126,7 @@ class LumeClient:
             payload["sourceLocation"] = source_location
         if dest_location:
             payload["destLocation"] = dest_location
-        return await self._request("POST", "/lume/vms/clone", json=payload)
+        return await self._request_dict("POST", "/lume/vms/clone", json=payload)
 
     async def start_vm(
         self,
@@ -127,21 +139,21 @@ class LumeClient:
         payload: dict[str, Any] = {"noDisplay": no_display}
         if storage:
             payload["storage"] = storage
-        return await self._request("POST", f"/lume/vms/{name}/run", json=payload)
+        return await self._request_dict("POST", f"/lume/vms/{name}/run", json=payload)
 
     async def stop_vm(self, name: str, storage: str | None = None) -> dict[str, Any]:
         """Stop a running VM."""
         payload: dict[str, Any] = {}
         if storage:
             payload["storage"] = storage
-        return await self._request("POST", f"/lume/vms/{name}/stop", json=payload)
+        return await self._request_dict("POST", f"/lume/vms/{name}/stop", json=payload)
 
     async def pull_image(self, image: str, name: str | None = None) -> dict[str, Any]:
         """Pull a VM image from registry."""
         payload: dict[str, Any] = {"image": image}
         if name:
             payload["name"] = name
-        return await self._request("POST", "/lume/pull", json=payload)
+        return await self._request_dict("POST", "/lume/pull", json=payload)
 
 
 # --- VMManager ---

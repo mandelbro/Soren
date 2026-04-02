@@ -193,7 +193,7 @@ def train_show(source: str, cascade: bool, config: str | None) -> None:
 
     site = svc.load_site(source)
     if site is None:
-        console.print(f"[red]Playbook not found for '{source}'.[/red]", err=True)
+        console.print(f"[red]Playbook not found for '{source}'.[/red]")
         raise SystemExit(1)
 
     console.print(Panel(f"Source: [bold]{site.source_name}[/]\nURL: {site.source_url}", title="Site Playbook"))

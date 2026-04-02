@@ -15,7 +15,7 @@ from soren.services.meta_agent import InterventionCallbacks
 class CLIInterventionCallbacks(InterventionCallbacks):
     """Rich-based interactive intervention prompt for attended mode."""
 
-    _CHOICE_MAP = {"t": "train", "s": "skip", "a": "abort"}
+    _CHOICE_MAP: dict[str, Literal["train", "skip", "abort"]] = {"t": "train", "s": "skip", "a": "abort"}
 
     def __init__(self, console: Console | None = None) -> None:
         self._console = console or Console()
@@ -41,7 +41,10 @@ class CLIInterventionCallbacks(InterventionCallbacks):
             default="s",
             console=self._console,
         )
-        return self._CHOICE_MAP.get(choice, "skip")
+        mapped = self._CHOICE_MAP.get(choice)
+        if mapped is not None:
+            return mapped
+        return "skip"
 
 
 @click.group()
@@ -112,10 +115,11 @@ def cycle_run(config, dry_run, unattended):
             if report.task_executed_id:
                 steps = (report.task_result and report.task_result.steps_taken) or 0
                 click.echo(f"Executed task: {report.task_executed_id[:8]}... ({steps} steps)")
-            if getattr(report, "playbook_preview", None):
+            preview: str | None = getattr(report, "playbook_preview", None)
+            if preview:
                 console = Console()
                 console.print("\n[dim]Playbook preview (--dry-run):[/dim]")
-                console.print(report.playbook_preview[:2000] + ("..." if len(report.playbook_preview) > 2000 else ""))
+                console.print(preview[:2000] + ("..." if len(preview) > 2000 else ""))
             if report.stuck_sources:
                 console = Console()
                 for src in report.stuck_sources:

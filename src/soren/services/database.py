@@ -26,6 +26,7 @@ class DatabaseManager:
 
     async def _run_migrations(self) -> None:
         """Apply pending migrations in order."""
+        assert self._conn is not None, "Database not initialized"
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_version (
