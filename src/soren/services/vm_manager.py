@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
-from soren.models.reset import ResetResult
+from soren.models.reset import ResetResult, SessionPrepResult
 from soren.models.vm import VMConfig
 from soren.services.reset_verification import verify_reset
+
+logger = logging.getLogger(__name__)
 
 
 class LumeConnectionError(Exception):
@@ -262,6 +265,45 @@ tell application "Safari"
 end tell
 """
 
+    OSASCRIPT_CREATE_OR_SWITCH_SPACE = """\
+tell application "System Events"
+    key code 126 using control down
+    delay 0.7
+    try
+        tell process "Dock"
+            click (first button whose description is "add desktop")
+        end tell
+    on error
+        key code 124 using control down
+    end try
+    delay 0.4
+    key code 53
+end tell
+"""
+
+    OSASCRIPT_LIST_FOREGROUND_APPS = """\
+tell application "System Events"
+    set appNames to name of every process whose background only is false
+    return appNames as string
+end tell
+"""
+
+    OSASCRIPT_FRONTMOST_APP = """\
+tell application "System Events"
+    return name of first application process whose frontmost is true
+end tell
+"""
+
+    PROTECTED_APPS = {
+        "finder",
+        "dock",
+        "systemuiserver",
+        "controlcenter",
+        "loginwindow",
+        "notificationcenter",
+        "windowserver",
+    }
+
     async def _run_osascript(self, script: str) -> str:
         """Execute osascript inside the VM. Raises on failure."""
         if not self._computer:
@@ -276,6 +318,115 @@ end tell
             raise RuntimeError("Computer not connected. Call connect_computer() first.")
         await self._computer.interface.run_command("pkill -f Safari 2>/dev/null; sleep 1; open -a Safari")
         await asyncio.sleep(2)
+
+    def _normalize_allowed_apps(self, required_apps: list[str] | None = None) -> set[str]:
+        """Return lowercase allowlist merged with required apps and built-in defaults."""
+        configured = {a.strip().lower() for a in self._config.allowed_apps if a and a.strip()}
+        required = {a.strip().lower() for a in (required_apps or []) if a and a.strip()}
+        # Safari is required for Soren's core browser workflows.
+        return configured | required | {"safari"} | self.PROTECTED_APPS
+
+    def _parse_app_list(self, raw: str) -> list[str]:
+        """Parse osascript app-name output into a normalized list."""
+        if not raw:
+            return []
+        return [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
+
+    async def _list_foreground_apps(self) -> list[str]:
+        raw = await self._run_osascript(self.OSASCRIPT_LIST_FOREGROUND_APPS)
+        return self._parse_app_list(raw)
+
+    async def _close_disallowed_apps(self, allowed_lower: set[str]) -> list[str]:
+        """Quit non-whitelisted GUI apps. Returns list of app names attempted."""
+        closed: list[str] = []
+        running = await self._list_foreground_apps()
+        for app in running:
+            app_lower = app.lower()
+            if app_lower in allowed_lower:
+                continue
+            try:
+                safe_app = app.replace('"', "")
+                await self._run_osascript(f'tell application "{safe_app}" to quit')
+                closed.append(app)
+            except Exception as exc:
+                logger.warning("Failed to quit app '%s' during session prep: %s", app, exc)
+        if closed and self._config.app_quit_grace_period_s > 0:
+            await asyncio.sleep(self._config.app_quit_grace_period_s)
+        return closed
+
+    async def _ensure_required_apps_open(self, required_apps: list[str] | None = None) -> None:
+        for app in sorted({*(required_apps or []), "Safari"}):
+            safe = app.replace('"', "").strip()
+            if not safe:
+                continue
+            await self._computer.interface.run_command(f'open -a "{safe}"')
+
+    async def _attempt_new_space(self, warnings: list[str]) -> bool:
+        if not self._config.create_new_space_per_session:
+            return False
+        retries = max(1, self._config.space_switch_retries)
+        for attempt in range(1, retries + 1):
+            try:
+                await self._run_osascript(self.OSASCRIPT_CREATE_OR_SWITCH_SPACE)
+                return True
+            except Exception as exc:
+                warnings.append(f"space attempt {attempt}/{retries} failed: {exc}")
+                await asyncio.sleep(0.5)
+        return True  # attempted, but not successful
+
+    async def prepare_session_environment(self, required_apps: list[str] | None = None) -> SessionPrepResult:
+        """Best-effort desktop isolation for a fresh automation session."""
+        start = time.monotonic()
+        warnings: list[str] = []
+        closed_apps: list[str] = []
+        remaining_disallowed: list[str] = []
+        frontmost = ""
+
+        await self.ensure_ready()
+        if not self._computer:
+            await self.connect_computer()
+
+        attempted_new_space = False
+        if self._config.session_isolation_enabled:
+            attempted_new_space = await self._attempt_new_space(warnings)
+
+            allowed_lower = self._normalize_allowed_apps(required_apps)
+            try:
+                closed_apps = await self._close_disallowed_apps(allowed_lower)
+            except Exception as exc:
+                warnings.append(f"app whitelist enforcement failed: {exc}")
+
+            try:
+                await self._ensure_required_apps_open(required_apps)
+            except Exception as exc:
+                warnings.append(f"failed opening required apps: {exc}")
+
+            try:
+                running_after = await self._list_foreground_apps()
+                remaining_disallowed = [
+                    app for app in running_after if app.lower() not in allowed_lower
+                ]
+            except Exception as exc:
+                warnings.append(f"verification list apps failed: {exc}")
+
+            try:
+                frontmost = await self._run_osascript(self.OSASCRIPT_FRONTMOST_APP)
+                if frontmost and frontmost.lower() in {a.lower() for a in remaining_disallowed}:
+                    warnings.append(f"frontmost app is disallowed: {frontmost}")
+            except Exception as exc:
+                warnings.append(f"frontmost app check failed: {exc}")
+
+        duration = time.monotonic() - start
+        success = not remaining_disallowed
+        return SessionPrepResult(
+            success=success,
+            duration_seconds=duration,
+            attempted_new_space=attempted_new_space,
+            frontmost_app=frontmost,
+            closed_apps=closed_apps,
+            remaining_disallowed_apps=remaining_disallowed,
+            warnings=warnings,
+        )
 
     async def reset_browser_state(self) -> ResetResult:
         """Close all Safari windows and open a fresh one. Sessions preserved."""
@@ -455,4 +606,5 @@ end tell
 
         # Re-patch VNC (new port on boot)
         await self.connect_computer()
+        await self.prepare_session_environment()
         self._contamination_detected = False

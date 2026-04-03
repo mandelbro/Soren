@@ -34,6 +34,14 @@ Training session commands:
   /help   — Show this help text
 """
 
+# Maximum CUA agent loop iterations per single training step.
+# The CUA SDK generator yields at least two events per action:
+#   1. The VLM's planned action (computer_call)
+#   2. The action result / screenshot (computer_call_output)
+# A budget of 5 allows the agent to handle retries or multi-part steps
+# while preventing runaway execution on a single training instruction.
+_SINGLE_STEP_BUDGET = 5
+
 
 # --- Callback Protocol ---
 
@@ -175,6 +183,7 @@ class TrainingSession:
     async def _init_vm(self) -> Any:
         await self._vm.ensure_ready()
         computer = await self._vm.connect_computer()
+        await self._vm.prepare_session_environment()
         return computer
 
     # --- PREREQ_REPLAY ---
@@ -372,7 +381,18 @@ class TrainingSession:
         instruction: str,
         computer: Any,
     ) -> tuple[bytes | None, str]:
-        """Execute one instruction via CUA agent. Returns (screenshot, description)."""
+        """Execute one instruction via CUA agent. Returns (screenshot, description).
+
+        The CUA agent.run() generator must be consumed until it terminates or the
+        step budget is reached.  Each iteration has two phases:
+
+        1. The VLM yields a planned action (``type == "computer_call"``).
+        2. The SDK executes the action on the VM and yields the screenshot result
+           (``type == "computer_call_output"``).
+
+        Breaking after the first yield (the plan phase) prevents the SDK from ever
+        executing the action, which is why the VM appeared unresponsive.
+        """
         from soren.patches import apply_all
 
         apply_all()
@@ -390,10 +410,15 @@ class TrainingSession:
         )
         messages = [{"role": "user", "content": instruction}]
         screenshot_bytes: bytes | None = None
+        iterations = 0
         async for result in agent.run(messages):
+            iterations += 1
             output = result.get("output", [])
+            logger.debug("_execute_single_step iteration %d: %d output items", iterations, len(output))
             for item in output:
-                if isinstance(item, dict) and item.get("type") == "computer_call_output":
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "computer_call_output":
                     out = item.get("output", {})
                     if isinstance(out, dict):
                         img = out.get("image_url") or out.get("image") or out.get("screenshot")
@@ -403,8 +428,19 @@ class TrainingSession:
                             try:
                                 screenshot_bytes = base64.b64decode(img)
                             except Exception:
-                                pass
-            break  # Single step -- only one iteration
+                                logger.debug("Failed to decode screenshot in training step", exc_info=True)
+                # Detect assistant completion signal to stop early
+                elif item.get("role") == "assistant":
+                    logger.debug("_execute_single_step: assistant completion signal received")
+
+            # Stop after the VLM produces an assistant message (action + result confirmed),
+            # or after a safety cap to prevent runaway loops on a single instruction.
+            last_roles = [i.get("role") for i in output if isinstance(i, dict)]
+            if "assistant" in last_roles:
+                break
+            if iterations >= _SINGLE_STEP_BUDGET:
+                logger.debug("_execute_single_step: step budget (%d) reached", _SINGLE_STEP_BUDGET)
+                break
 
         description = ""
         if screenshot_bytes:

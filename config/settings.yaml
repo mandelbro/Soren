@@ -44,3 +44,10 @@ vm:
   memory_gb: 8
   recreate_every_n_cycles: 10
   lume_url: "http://localhost:7777"
+  # Session isolation: keep desktop clean for vision workflows.
+  session_isolation_enabled: true
+  create_new_space_per_session: true
+  # Add app names here if a workflow needs non-browser GUI apps.
+  allowed_apps: ["Safari"]
+  app_quit_grace_period_s: 1.0
+  space_switch_retries: 2

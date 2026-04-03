@@ -32,6 +32,7 @@ async def test_recreate_vm_calls_stop_delete_clone_start():
         patch.object(manager._client, "_request", new_callable=AsyncMock, side_effect=track_request),
         patch.object(manager, "_wait_for_ready", new_callable=AsyncMock),
         patch.object(manager, "connect_computer", new_callable=AsyncMock),
+        patch.object(manager, "prepare_session_environment", new_callable=AsyncMock),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         await manager.recreate_vm(timeout_s=5)
@@ -54,6 +55,7 @@ async def test_recreate_vm_waits_for_ready():
         patch.object(manager._client, "_request", new_callable=AsyncMock, return_value={}),
         patch.object(manager, "_wait_for_ready", mock_wait),
         patch.object(manager, "connect_computer", new_callable=AsyncMock),
+        patch.object(manager, "prepare_session_environment", new_callable=AsyncMock),
     ):
         await manager.recreate_vm(timeout_s=10)
 
@@ -71,10 +73,12 @@ async def test_recreate_vm_repatches_vnc():
         patch.object(manager._client, "_request", new_callable=AsyncMock, return_value={}),
         patch.object(manager, "_wait_for_ready", new_callable=AsyncMock),
         patch.object(manager, "connect_computer", mock_connect),
+        patch.object(manager, "prepare_session_environment", new_callable=AsyncMock) as mock_prep,
     ):
         await manager.recreate_vm(timeout_s=5)
 
     mock_connect.assert_called_once()
+    mock_prep.assert_called_once()
 
 
 # --- _should_recreate tests ---

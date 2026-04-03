@@ -9,6 +9,7 @@ from soren.models.persona import Persona
 from soren.models.session import BacklogSummary, CycleReport, DiscoveredTask, TaskResult
 from soren.models.task import Task
 from soren.models.task_source import TaskSource
+from soren.models.reset import SessionPrepResult
 from soren.services.meta_agent import SorenMetaAgent
 
 
@@ -68,6 +69,17 @@ def _make_agent(
     vm.vm_name = "test-vm"
     vm.ensure_ready = AsyncMock()
     vm.connect_computer = AsyncMock(return_value=MagicMock())
+    vm.prepare_session_environment = AsyncMock(
+        return_value=SessionPrepResult(
+            success=True,
+            duration_seconds=0.1,
+            attempted_new_space=True,
+            frontmost_app="Safari",
+            closed_apps=[],
+            remaining_disallowed_apps=[],
+            warnings=[],
+        )
+    )
     vm.reset_browser_state = AsyncMock()
     vm.notify_cycle_complete = MagicMock(return_value=False)
     vm.recreate_vm = AsyncMock()
@@ -265,3 +277,18 @@ async def test_refresh_tasks_runs_discovery_only():
     summary = await agent.refresh_tasks()
     assert summary.total_inserted >= 0
     mocks["executor"].execute_with_learning.assert_not_called()
+
+
+async def test_run_cycle_prepares_session_environment_before_execution():
+    """run_cycle() prepares desktop session state after computer connection."""
+    task = _make_task()
+    agent, mocks = _make_agent(backlog_tasks=[task])
+    await agent.run_cycle()
+    mocks["vm"].prepare_session_environment.assert_called_once()
+
+
+async def test_refresh_tasks_prepares_session_environment():
+    """refresh_tasks() prepares desktop session state before discovery."""
+    agent, mocks = _make_agent()
+    await agent.refresh_tasks()
+    mocks["vm"].prepare_session_environment.assert_called_once()

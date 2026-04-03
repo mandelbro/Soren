@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -181,6 +181,55 @@ async def test_vm_manager_wait_for_ready_raises_timeout():
         with pytest.raises(TimeoutError) as exc_info:
             await manager._wait_for_ready(timeout_s=1)
         assert "did not become ready" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_prepare_session_environment_noop_when_isolation_disabled():
+    """prepare_session_environment() skips app/space changes when disabled."""
+    config = VMConfig(name="test-vm", session_isolation_enabled=False)
+    manager = VMManager(config)
+    manager._computer = MagicMock()
+    manager._computer.interface.run_command = AsyncMock()
+
+    with patch.object(manager, "ensure_ready", new_callable=AsyncMock):
+        result = await manager.prepare_session_environment()
+
+    assert result.success is True
+    assert result.attempted_new_space is False
+    manager._computer.interface.run_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prepare_session_environment_enforces_whitelist_and_opens_required_apps():
+    """prepare_session_environment() closes non-whitelisted apps and opens required apps."""
+    config = VMConfig(
+        name="test-vm",
+        allowed_apps=["Safari"],
+        app_quit_grace_period_s=0.0,
+        create_new_space_per_session=True,
+    )
+    manager = VMManager(config)
+    manager._computer = MagicMock()
+    manager._computer.interface.run_command = AsyncMock()
+
+    with (
+        patch.object(manager, "ensure_ready", new_callable=AsyncMock),
+        patch.object(manager, "_attempt_new_space", new_callable=AsyncMock, return_value=True),
+        patch.object(manager, "_list_foreground_apps", new_callable=AsyncMock) as list_apps,
+        patch.object(manager, "_run_osascript", new_callable=AsyncMock) as run_script,
+    ):
+        list_apps.side_effect = [
+            ["Safari", "Slack", "Python"],
+            ["Safari"],
+        ]
+        run_script.side_effect = lambda script: "Safari" if "frontmost is true" in script else ""
+
+        result = await manager.prepare_session_environment()
+
+    assert result.success is True
+    assert sorted(result.closed_apps) == ["Python", "Slack"]
+    assert result.remaining_disallowed_apps == []
+    manager._computer.interface.run_command.assert_called_once_with('open -a "Safari"')
 
 
 # --- CLI tests (vm status, vm stop) ---

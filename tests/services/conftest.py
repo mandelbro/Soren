@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 from soren.models.persona import Persona, Traits
+from soren.models.reset import SessionPrepResult
 from soren.models.session import TaskResult
 from soren.models.task import Task
 from soren.services.meta_agent import SorenMetaAgent
@@ -62,6 +63,17 @@ def build_meta_agent(
     vm.vm_name = "test-vm"
     vm.ensure_ready = AsyncMock()
     vm.connect_computer = AsyncMock(return_value=MagicMock())
+    vm.prepare_session_environment = AsyncMock(
+        return_value=SessionPrepResult(
+            success=True,
+            duration_seconds=0.1,
+            attempted_new_space=True,
+            frontmost_app="Safari",
+            closed_apps=[],
+            remaining_disallowed_apps=[],
+            warnings=[],
+        )
+    )
     vm.reset_browser_state = AsyncMock()
     vm.notify_cycle_complete.return_value = False
 

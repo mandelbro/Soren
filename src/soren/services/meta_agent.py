@@ -169,6 +169,9 @@ class SorenMetaAgent:
             self._memory_guard.reset_cycle()
             await self._vm.ensure_ready()
             computer = await self._vm.connect_computer()
+            prep = await self._vm.prepare_session_environment()
+            if prep.warnings:
+                logger.warning("Session prep warnings before run_cycle: %s", "; ".join(prep.warnings))
 
             # 2. Assess
             eligible = await self._backlog.get_eligible_tasks()
@@ -559,6 +562,9 @@ class SorenMetaAgent:
 
         await self._vm.ensure_ready()
         computer = await self._vm.connect_computer()
+        prep = await self._vm.prepare_session_environment()
+        if prep.warnings:
+            logger.warning("Session prep warnings before refresh_tasks: %s", "; ".join(prep.warnings))
 
         total_inserted = 0
         total_skipped = 0
