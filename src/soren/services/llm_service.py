@@ -1,4 +1,4 @@
-"""LLMService — Ollama wrapper with keep_alive=0 and MemoryGuard integration."""
+"""LLMService — Ollama wrapper with MemoryGuard integration."""
 
 from __future__ import annotations
 
@@ -17,14 +17,18 @@ T = TypeVar("T", bound=BaseModel)
 # Soren uses a dedicated Ollama instance on 11435 by default (see .env.example)
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11435"
 
+# Cloud models run on remote infrastructure — no need to force immediate unload.
+# Local models use keep_alive=0 to free VRAM immediately after each call.
+KEEP_ALIVE_CLOUD: int | None = None  # Ollama server default (typically 5m)
+KEEP_ALIVE_LOCAL: int = 0  # Immediate unload
+
 
 class LLMService:
-    """Single interface for all Ollama interactions with keep_alive=0."""
-
-    KEEP_ALIVE = 0  # Immediate unload after response
+    """Single interface for all Ollama interactions."""
 
     def __init__(self, settings: SorenSettings) -> None:
         self._settings = settings
+        self._is_cloud = settings.llm.is_cloud_model
         host = os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST)
         self._client = AsyncClient(host=host)
         self._memory_guard = MemoryGuard(settings.llm)
@@ -34,28 +38,33 @@ class LLMService:
     def memory_guard(self) -> MemoryGuard:
         return self._memory_guard
 
+    def _keep_alive(self) -> int | None:
+        """Return the keep_alive value appropriate for the current model type."""
+        return KEEP_ALIVE_CLOUD if self._is_cloud else KEEP_ALIVE_LOCAL
+
     async def generate(
         self,
         prompt: str,
         model: str | None = None,
         images: list[bytes] | None = None,
     ) -> str:
-        """Generate text with keep_alive=0. Uses MemoryGuard model when model is None."""
+        """Generate text. Uses MemoryGuard model when model is None."""
         model = model or await self._memory_guard.get_reasoning_model(self._client)
         self._last_model_used = model
+        ka = self._keep_alive()
 
         if images:
             resp = await self._client.generate(
                 model=model,
                 prompt=prompt,
                 images=images,
-                keep_alive=self.KEEP_ALIVE,
+                keep_alive=ka,
             )
         else:
             resp = await self._client.generate(
                 model=model,
                 prompt=prompt,
-                keep_alive=self.KEEP_ALIVE,
+                keep_alive=ka,
             )
         return resp.response or ""
 
@@ -73,7 +82,7 @@ class LLMService:
             model=model,
             prompt=full_prompt,
             format="json",
-            keep_alive=self.KEEP_ALIVE,
+            keep_alive=self._keep_alive(),
         )
         text = resp.response or "{}"
         try:

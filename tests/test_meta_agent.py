@@ -246,14 +246,14 @@ async def test_run_cycle_handles_discovery_failure_gracefully():
 
 
 async def test_run_cycle_aborts_when_memory_over_threshold():
-    """run_cycle() aborts early when memory > 85% to avoid OOM."""
+    """run_cycle() aborts early when memory exceeds threshold to avoid OOM."""
     with patch("soren.services.meta_agent.psutil.virtual_memory") as mock_vm:
-        mock_vm.return_value.percent = 90.0
+        mock_vm.return_value.percent = 95.0
         agent, mocks = _make_agent(backlog_tasks=[_make_task()])
         report = await agent.run_cycle()
     assert report.task_result is not None
     assert report.task_result.success is False
-    assert "85%" in (report.task_result.error or "")
+    assert "92%" in (report.task_result.error or "")
     mocks["vm"].ensure_ready.assert_not_called()
 
 

@@ -24,8 +24,8 @@ def llm_service(settings: SorenSettings) -> LLMService:
 
 class TestLLMService:
     @pytest.mark.asyncio
-    async def test_generate_sends_keep_alive_zero(self, llm_service: LLMService) -> None:
-        """LLMService.generate() sends request with keep_alive=0."""
+    async def test_generate_sends_keep_alive_zero_for_local_model(self, llm_service: LLMService) -> None:
+        """LLMService.generate() sends keep_alive=0 for local (non-cloud) models."""
         with patch.object(llm_service._client, "generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = MagicMock(response="hello")
             with patch.object(
@@ -113,6 +113,23 @@ class TestLLMService:
         ):
             result = await llm_service.is_available()
             assert result is False
+
+    @pytest.mark.asyncio
+    async def test_generate_sends_no_keep_alive_for_cloud_model(self) -> None:
+        """LLMService.generate() sends keep_alive=None for cloud models (server default)."""
+        cloud_settings = SorenSettings(llm=LLMConfig(primary_model="gemma3:27b-cloud", fallback_model="gemma3:4b"))
+        cloud_llm = LLMService(cloud_settings)
+        with patch.object(cloud_llm._client, "generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = MagicMock(response="hello")
+            with patch.object(
+                cloud_llm._memory_guard,
+                "get_reasoning_model",
+                new_callable=AsyncMock,
+                return_value="gemma3:27b-cloud",
+            ):
+                await cloud_llm.generate("test prompt")
+            mock_gen.assert_called_once()
+            assert mock_gen.call_args.kwargs.get("keep_alive") is None
 
     @pytest.mark.asyncio
     async def test_unload_model_sends_unload_request(self, llm_service: LLMService) -> None:

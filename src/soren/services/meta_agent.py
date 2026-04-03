@@ -19,7 +19,7 @@ from soren.services.memory_service import MemoryService
 from soren.services.report_writer import write_report
 from soren.services.retry_policy import classify_failure
 
-MEMORY_ABORT_THRESHOLD_PCT = 85.0
+MEMORY_ABORT_THRESHOLD_PCT = 92.0
 UNATTENDED_CONFIDENCE_FLOOR = 0.1
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ class SorenMetaAgent:
         self._scorer = TaskPriorityScorer(settings)
 
     def _memory_over_threshold(self) -> bool:
-        """Return True if memory usage exceeds 85% (32 GB safeguard)."""
+        """Return True if memory usage exceeds threshold (92% for cloud models, was 85% for local)."""
         try:
             return psutil.virtual_memory().percent >= MEMORY_ABORT_THRESHOLD_PCT
         except Exception:
@@ -149,7 +149,7 @@ class SorenMetaAgent:
             if self._memory_over_threshold():
                 report.task_result = TaskResult(
                     success=False,
-                    error="Memory over 85% before cycle; aborting to avoid OOM. Run `just check-resources`.",
+                    error=f"Memory over {MEMORY_ABORT_THRESHOLD_PCT:.0f}% before cycle; aborting to avoid OOM. Run `just check-resources`.",
                 )
                 report.completed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 report.total_duration_seconds = time.perf_counter() - start_ts
