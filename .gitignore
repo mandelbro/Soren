@@ -16,7 +16,8 @@ build/
 .claude-flow/sessions/*
 
 # Virtual environment
-.venv/
+.venv
+.venv.nosync/
 venv/
 
 # IDE
