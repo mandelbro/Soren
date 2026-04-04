@@ -11,9 +11,14 @@ default: format lint typecheck test
 
 # Install all dependencies and pre-commit hooks
 init:
+    @# Ensure UV_PROJECT_ENVIRONMENT is in .env so `uv run` (outside just) works.
+    @# iCloud Drive re-materializes .venv as a directory after deletion, so the
+    @# symlink trick is unreliable. The env var is the only robust solution.
+    @grep -q '^UV_PROJECT_ENVIRONMENT=' .env 2>/dev/null || echo 'UV_PROJECT_ENVIRONMENT=.venv.nosync' >> .env
     uv sync --extra dev
-    @# Maintain .venv symlink for IDE/pyright compatibility
-    @[ -L .venv ] || [ ! -d .venv.nosync ] || ln -sf .venv.nosync .venv
+    @# Attempt symlink for IDE compatibility (best-effort on iCloud).
+    @if [ -d .venv ] && [ ! -L .venv ]; then rm -rf .venv 2>/dev/null; fi
+    @[ -L .venv ] || [ ! -d .venv.nosync ] || ln -sf .venv.nosync .venv 2>/dev/null || true
     uv run pre-commit install
 
 # Install/sync — uv natively installs the project from pyproject.toml [build-system].
@@ -83,6 +88,16 @@ add-credential REF SERVICE_TYPE:
 
 list-credentials:
     uv run soren credentials list
+
+# Training
+train *ARGS:
+    uv run soren train run {{ARGS}}
+
+train-list *ARGS:
+    uv run soren train list {{ARGS}}
+
+train-show SOURCE *ARGS:
+    uv run soren train show {{SOURCE}} {{ARGS}}
 
 # Playbook management
 list-playbooks:
