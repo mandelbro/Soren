@@ -48,7 +48,7 @@ class RichTrainingCallbacks(TrainingCallbacks):
 
     async def confirm_step(self, screenshot: bytes, vlm_description: str) -> str:
         console.print(Panel(vlm_description or "(No description)", title="Step Result", border_style="green"))
-        return console.input("[bold][y][/] Accept  [bold][n][/] Redo  [bold][d][/] Done: ")
+        return console.input("[bold]\\[y][/] Accept  [bold]\\[n][/] Redo  [bold]\\[d][/] Done: ")
 
     async def get_expected_after(self, vlm_suggestion: str) -> str:
         console.print(f"[dim]Suggested:[/] {vlm_suggestion}")
@@ -60,6 +60,63 @@ class RichTrainingCallbacks(TrainingCallbacks):
 
     async def show_error(self, error: str) -> None:
         console.print(f"[red]{error}[/red]")
+
+    # --- Autonomous verify+retry callbacks ---
+
+    async def get_instruction_with_expected(self) -> tuple[str, str]:
+        instruction = console.input("[bold cyan]Instruction[/] (/help for commands): ")
+        if instruction.strip().startswith("/"):
+            return instruction, ""
+        expected = console.input("[bold cyan]Expected outcome[/]: ")
+        return instruction, expected
+
+    async def show_verification_result(
+        self,
+        attempt: int,
+        max_attempts: int,
+        passed: bool,
+        confidence: float,
+        reasoning: str | None,
+    ) -> None:
+        status = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
+        content = f"Attempt: {attempt}/{max_attempts}\nResult: {status}\nConfidence: {confidence:.0%}"
+        if reasoning:
+            content += f"\nReasoning: {reasoning}"
+        border = "green" if passed else "red"
+        console.print(Panel(content, title="Verification", border_style=border))
+
+    async def handle_stuck(
+        self,
+        instruction: str,
+        expected_after: str,
+        attempts: int,
+        last_reasoning: str | None,
+    ) -> str:
+        console.print(
+            Panel(
+                f"Instruction: {instruction}\n"
+                f"Expected: {expected_after}\n"
+                f"Attempts: {attempts}\n"
+                f"Last reasoning: {last_reasoning or 'N/A'}",
+                title="[red]Stuck — Verification Failed[/red]",
+                border_style="red",
+            )
+        )
+        console.print(
+            "  [bold]\\[r][/] Retry with new instruction\n"
+            "  [bold]\\[s][/] Skip this step\n"
+            "  [bold]\\[a][/] Accept as-is (unverified)\n"
+            "  [bold]\\[q][/] Abort training"
+        )
+        choice = console.input("[bold]Choice[/]: ").strip().lower()
+        if choice in ("r", "retry"):
+            new_instr = console.input("[bold cyan]New instruction[/]: ").strip()
+            return f"retry:{new_instr}"
+        if choice in ("a", "accept"):
+            return "accept"
+        if choice in ("q", "abort"):
+            return "abort"
+        return "skip"  # Default: skip (includes "s" and unrecognized)
 
 
 # --- Command Group ---
@@ -107,6 +164,7 @@ def train_run(source: str, flow: str | None, task_type: str | None, config: str 
                 source_name=source,
                 flow_type=ft,
                 task_type=task_type if ft == "execution" else None,
+                verification_model=settings.verification.model,
             )
 
             result = await session.run()
