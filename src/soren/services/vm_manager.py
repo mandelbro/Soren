@@ -355,7 +355,8 @@ end tell
         return closed
 
     async def _ensure_required_apps_open(self, required_apps: list[str] | None = None) -> None:
-        for app in sorted({*(required_apps or []), "Safari"}):
+        apps_to_open: set[str] = {*(required_apps or []), "Safari"}
+        for app in sorted(apps_to_open):
             safe = app.replace('"', "").strip()
             if not safe:
                 continue
@@ -403,9 +404,7 @@ end tell
 
             try:
                 running_after = await self._list_foreground_apps()
-                remaining_disallowed = [
-                    app for app in running_after if app.lower() not in allowed_lower
-                ]
+                remaining_disallowed = [app for app in running_after if app.lower() not in allowed_lower]
             except Exception as exc:
                 warnings.append(f"verification list apps failed: {exc}")
 

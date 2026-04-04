@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soren.models.persona import Persona
+from soren.models.reset import SessionPrepResult
 from soren.models.session import BacklogSummary, CycleReport, DiscoveredTask, TaskResult
 from soren.models.task import Task
 from soren.models.task_source import TaskSource
-from soren.models.reset import SessionPrepResult
 from soren.services.meta_agent import SorenMetaAgent
 
 

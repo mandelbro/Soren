@@ -1,12 +1,19 @@
 # Soren Desktop Agent Framework
 set dotenv-load
 
+# iCloud Drive evicts venv files to cloud storage, breaking editable installs.
+# The .nosync suffix tells macOS to keep the directory local at all times.
+# A .venv symlink is created by `just init` for IDE/pyright compatibility.
+export UV_PROJECT_ENVIRONMENT := ".venv.nosync"
+
 # Default: run all quality gates (format, lint, typecheck, test)
 default: format lint typecheck test
 
 # Install all dependencies and pre-commit hooks
 init:
     uv sync --extra dev
+    @# Maintain .venv symlink for IDE/pyright compatibility
+    @[ -L .venv ] || [ ! -d .venv.nosync ] || ln -sf .venv.nosync .venv
     uv run pre-commit install
 
 # Install/sync — uv natively installs the project from pyproject.toml [build-system].
@@ -134,7 +141,7 @@ clean:
 # The OLLAMA_HOST env var is loaded from .env via dotenv-load and also set explicitly
 # below so the server binds to the correct port regardless of shell env state.
 ollama-serve:
-    OLLAMA_HOST=http://127.0.0.1:11435 ollama serve
+    env -u OLLAMA_MAX_LOADED_MODELS -u OLLAMA_KEEP_ALIVE OLLAMA_HOST=http://127.0.0.1:11435 ollama serve
 
 # Resource validation (32 GB memory safeguard)
 check-resources:
