@@ -41,7 +41,10 @@ Training session commands:
 """
 
 # Maximum CUA agent loop iterations per single training step.
-_SINGLE_STEP_BUDGET = 5
+# Each UI action requires at least 3 turns (plan → execute → completion), so 5
+# was sufficient in theory but left no headroom.  10 gives breathing room while
+# still bounding the loop for interactive training latency.
+_SINGLE_STEP_BUDGET = 10
 
 # Default number of auto-verify retries before falling back to human.
 _DEFAULT_MAX_VERIFY_RETRIES = 3
@@ -533,14 +536,19 @@ class TrainingSession:
         """Execute one instruction via CUA agent. Returns (screenshot, description).
 
         The CUA agent.run() generator must be consumed until it terminates or the
-        step budget is reached.  Each iteration has two phases:
+        step budget is reached.  A single UI action requires at least three turns:
 
-        1. The VLM yields a planned action (``type == "computer_call"``).
-        2. The SDK executes the action on the VM and yields the screenshot result
-           (``type == "computer_call_output"``).
+        1. VLM plans the action — yields a ``computer_call`` item (role may be
+           ``"assistant"`` here, but no screenshot yet).
+        2. SDK executes the action on the VM — yields a ``computer_call_output``
+           item that carries the post-action screenshot.
+        3. VLM emits a completion summary — yields a ``message`` item with
+           ``role == "assistant"`` and non-empty text content.
 
-        Breaking after the first yield (the plan phase) prevents the SDK from ever
-        executing the action, which is why the VM appeared unresponsive.
+        The break condition must only fire on Turn 3 (a ``type == "message"``
+        assistant item with content), *not* on any item that merely carries
+        ``role == "assistant"``.  Breaking on Turn 1 prevents the SDK from ever
+        delivering the action to the VM.
         """
         from soren.patches import apply_all
 
@@ -567,7 +575,8 @@ class TrainingSession:
             for item in output:
                 if not isinstance(item, dict):
                     continue
-                if item.get("type") == "computer_call_output":
+                item_type = item.get("type")
+                if item_type == "computer_call_output":
                     out = item.get("output", {})
                     if isinstance(out, dict):
                         img = out.get("image_url") or out.get("image") or out.get("screenshot")
@@ -578,15 +587,23 @@ class TrainingSession:
                                 screenshot_bytes = base64.b64decode(img)
                             except Exception:
                                 logger.debug("Failed to decode screenshot in training step", exc_info=True)
-                elif item.get("role") == "assistant":
-                    logger.debug("_execute_single_step: assistant completion signal received")
-
-            last_roles = [i.get("role") for i in output if isinstance(i, dict)]
-            if "assistant" in last_roles:
-                break
-            if iterations >= _SINGLE_STEP_BUDGET:
-                logger.debug("_execute_single_step: step budget (%d) reached", _SINGLE_STEP_BUDGET)
-                break
+                # Only treat a message-role assistant item as a terminal completion
+                # signal when it carries text content.  A computer_call plan item
+                # also carries role=="assistant" in some SDK response shapes; breaking
+                # on that fires before the SDK sends the action to the VM.
+                elif item.get("role") == "assistant" and item_type == "message":
+                    content = item.get("content", "")
+                    if content:
+                        logger.debug("_execute_single_step: assistant completion message received")
+                        break
+            else:
+                # Inner loop finished without a break — check budget and continue.
+                if iterations >= _SINGLE_STEP_BUDGET:
+                    logger.debug("_execute_single_step: step budget (%d) reached", _SINGLE_STEP_BUDGET)
+                    break
+                continue
+            # Inner loop broke — exit the outer generator loop too.
+            break
 
         description = ""
         if screenshot_bytes:
