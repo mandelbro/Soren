@@ -49,6 +49,12 @@ _SINGLE_STEP_BUDGET = 10
 # Default number of auto-verify retries before falling back to human.
 _DEFAULT_MAX_VERIFY_RETRIES = 3
 
+# Seconds to wait after the CUA loop finishes before capturing the verification
+# screenshot.  Animated UI changes (modals, page transitions) typically need
+# 1–2 seconds to render after the triggering click.  The SDK's own
+# screenshot_delay (0.5 s) is too short for these cases.
+_POST_ACTION_SETTLE_DELAY = 1.5
+
 
 # --- Sentinel Exception ---
 
@@ -541,7 +547,8 @@ class TrainingSession:
         1. VLM plans the action — yields a ``computer_call`` item (role may be
            ``"assistant"`` here, but no screenshot yet).
         2. SDK executes the action on the VM — yields a ``computer_call_output``
-           item that carries the post-action screenshot.
+           item that carries the post-action screenshot (taken ~0.5 s after the
+           click, before animated UI changes finish).
         3. VLM emits a completion summary — yields a ``message`` item with
            ``role == "assistant"`` and non-empty text content.
 
@@ -549,7 +556,15 @@ class TrainingSession:
         assistant item with content), *not* on any item that merely carries
         ``role == "assistant"``.  Breaking on Turn 1 prevents the SDK from ever
         delivering the action to the VM.
+
+        After the loop completes a post-action screenshot is captured with an
+        extra 1.5-second settling delay so that animated UI changes (modals,
+        page transitions) have time to finish before the verification VLM sees
+        the screen.  The mid-loop screenshot is kept as a fallback in case the
+        post-loop capture fails.
         """
+        import asyncio
+
         from soren.patches import apply_all
 
         apply_all()
@@ -604,6 +619,18 @@ class TrainingSession:
                 continue
             # Inner loop broke — exit the outer generator loop too.
             break
+
+        # Post-action settling delay: animated UI changes (modals, page
+        # transitions) often take 1–2 seconds to fully render.  The mid-loop
+        # screenshot above is captured only 0.5 s after the click; capturing a
+        # fresh one here gives the UI the extra time it needs.
+        await asyncio.sleep(_POST_ACTION_SETTLE_DELAY)
+        fresh_screenshot = await self._take_screenshot()
+        if fresh_screenshot:
+            logger.debug("_execute_single_step: using post-settle screenshot for verification")
+            screenshot_bytes = fresh_screenshot
+        else:
+            logger.debug("_execute_single_step: post-settle screenshot failed, using mid-loop screenshot")
 
         description = ""
         if screenshot_bytes:
