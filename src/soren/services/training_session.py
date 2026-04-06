@@ -363,10 +363,10 @@ class TrainingSession:
 
         for attempt in range(1, max_retries + 1):
             # 1. Execute via CUA (reuses existing retry-on-exception logic)
-            result = await self._try_execute_step(instruction)
-            if result[0] is None:
+            screenshot, description = await self._try_execute_step(instruction)
+            if screenshot is None:
                 return None  # CUA execution failed entirely
-            last_screenshot, last_description = result
+            last_screenshot, last_description = screenshot, description
 
             # 2. Auto-verify using ActionVerifier Tier 2 (VLM semantic check)
             verifier = self._get_verifier()
