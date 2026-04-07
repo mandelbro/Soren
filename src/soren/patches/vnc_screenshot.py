@@ -1,4 +1,31 @@
-"""VNC screenshot patch for CUA Computer — bypasses stale CGDisplayCreateImage in Lume VMs."""
+"""VNC screenshot patch for CUA Computer — bypasses stale CGDisplayCreateImage in Lume VMs.
+
+Also patches ``interface.left_click``, ``interface.right_click``, and
+``interface.double_click`` to rescale coordinates from VNC-image space to
+screen-logical space.
+
+Background
+----------
+The UITARS agent loop (``agent/loops/uitars.py``) takes a screenshot via
+``computer_handler.screenshot()`` — which now calls our VNC-patched method —
+and feeds those pixels to the VLM.  The VLM returns 0-1000 normalised
+coordinates.  ``convert_to_computer_actions`` scales them by
+``original_width / original_height`` (the VNC image dimensions) to get
+absolute pixel coordinates, then passes them straight to
+``interface.left_click(x, y)``.
+
+The Computer API Server inside the Lume VM expects *screen-logical*
+coordinates (e.g. 1920×1080).  If the VNC framebuffer is captured at a
+different resolution (e.g. Retina 2×: 3840×2160), every click lands at
+roughly double the intended position — mostly off-screen or on the wrong
+element.
+
+The fix: intercept ``left_click`` / ``right_click`` / ``double_click`` and
+rescale the incoming coordinates from VNC-image space to screen-logical
+space using the ratio ``screen_size / vnc_image_size``.  We cache the VNC
+image dimensions and screen size after the first screenshot to avoid
+redundant async calls on every click.
+"""
 
 from __future__ import annotations
 
@@ -64,22 +91,110 @@ def _capture_vnc_screenshot(host: str, port: int, password: str, timeout_s: int 
 
 
 def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> None:
-    """Replace computer.interface.screenshot() with VNC capture.
+    """Replace screenshot and coordinate-issuing methods on computer.interface.
 
-    The CUA SDK's CGDisplayCreateImage returns stale framebuffer data in
-    Apple Virtualization Framework VMs. This patch uses vncdotool to capture
-    fresh screenshots from the guest OS.
+    Patches applied:
+    1. ``screenshot()`` — replaced with VNC capture via vncdotool so the VLM
+       receives a fresh, accurate framebuffer image.
+    2. ``left_click(x, y)``, ``right_click(x, y)``, ``double_click(x, y)`` —
+       wrapped to rescale coordinates from VNC-image space to screen-logical
+       space before forwarding to the Computer API Server.
+
+    The rescaling is necessary because the UITARS loop scales VLM coordinates
+    by the VNC image dimensions, but the Computer API Server expects
+    screen-logical coordinates.  If these differ (e.g. Retina 2x framebuffer),
+    every click lands at the wrong position.
     """
     import asyncio
+
+    if not (hasattr(computer, "interface") and computer.interface is not None):
+        return
+
+    interface = computer.interface
+
+    # --- Coordinate scaling state (populated lazily after first screenshot) ---
+    _coord_scale: dict[str, float] = {"x": 1.0, "y": 1.0}
+    _scale_initialised: list[bool] = [False]
 
     async def _vnc_screenshot() -> bytes:
         host, port, password = await _discover_vnc_url(lume_client, vm_name)
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
+        screenshot_bytes = await loop.run_in_executor(
             None,
             lambda: _capture_vnc_screenshot(host, port, password),
         )
 
-    # Replace the interface's screenshot method
-    if hasattr(computer, "interface") and computer.interface is not None:
-        computer.interface.screenshot = _vnc_screenshot
+        # Lazily compute the VNC-image → screen-logical scale factors.
+        # We only need to do this once per session; the VM resolution doesn't
+        # change during a training run.
+        if not _scale_initialised[0]:
+            try:
+                from io import BytesIO
+
+                from PIL import Image
+
+                img = Image.open(BytesIO(screenshot_bytes))
+                vnc_w, vnc_h = img.size
+
+                # Ask the Computer API Server for the logical screen dimensions.
+                # ``get_screen_size`` is a WebSocket command that bypasses VNC.
+                screen = await interface.get_screen_size()
+                screen_w = screen.get("width", vnc_w)
+                screen_h = screen.get("height", vnc_h)
+
+                _coord_scale["x"] = screen_w / vnc_w if vnc_w else 1.0
+                _coord_scale["y"] = screen_h / vnc_h if vnc_h else 1.0
+                _scale_initialised[0] = True
+
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "VNC coordinate scale: vnc=%dx%d screen=%dx%d scale=%.4fx%.4f",
+                    vnc_w,
+                    vnc_h,
+                    screen_w,
+                    screen_h,
+                    _coord_scale["x"],
+                    _coord_scale["y"],
+                )
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "VNC coordinate scale initialisation failed; defaulting to 1:1",
+                    exc_info=True,
+                )
+                _scale_initialised[0] = True  # don't retry on every screenshot
+
+        return screenshot_bytes
+
+    # Replace screenshot
+    interface.screenshot = _vnc_screenshot
+
+    # --- Click/coordinate wrappers ---
+
+    _orig_left_click = interface.left_click
+    _orig_right_click = interface.right_click
+    _orig_double_click = interface.double_click
+
+    def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
+        """Scale (x, y) from VNC-image space to screen-logical space."""
+        sx = round(x * _coord_scale["x"]) if x is not None else x
+        sy = round(y * _coord_scale["y"]) if y is not None else y
+        return sx, sy
+
+    async def _left_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
+        sx, sy = _scale_xy(x, y)
+        await _orig_left_click(sx, sy, **kwargs)
+
+    async def _right_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
+        sx, sy = _scale_xy(x, y)
+        await _orig_right_click(sx, sy, **kwargs)
+
+    async def _double_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
+        sx, sy = _scale_xy(x, y)
+        await _orig_double_click(sx, sy, **kwargs)
+
+    interface.left_click = _left_click_scaled
+    interface.right_click = _right_click_scaled
+    interface.double_click = _double_click_scaled
