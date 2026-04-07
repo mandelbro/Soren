@@ -90,8 +90,10 @@ list-credentials:
     uv run soren credentials list
 
 # Training
+# PYTHONWARNINGS suppresses the chronic Sentry/OTel "not installed" UserWarnings
+# from CUA SDK callback modules that drown the training log on every step.
 train *ARGS:
-    uv run soren train run {{ARGS}}
+    PYTHONWARNINGS=ignore::UserWarning uv run soren train run {{ARGS}}
 
 train-list *ARGS:
     uv run soren train list {{ARGS}}

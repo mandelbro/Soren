@@ -89,12 +89,16 @@ def _mock_playbook_service() -> AsyncMock:
 
 
 def _make_cua_plan() -> dict:
-    """Build the first SDK yield: VLM planned action (computer_call)."""
+    """Build the first SDK yield: VLM planned action (computer_call).
+
+    Mirrors the canonical CUA SDK shape: ``action`` is a sibling of ``type`` at
+    the top level of the item (see ``agent/responses.py::make_click_item``).
+    """
     return {
         "output": [
             {
                 "type": "computer_call",
-                "call": {"action": {"type": "click", "x": 100, "y": 200}},
+                "action": {"type": "click", "x": 100, "y": 200, "button": "left"},
             }
         ]
     }
@@ -718,6 +722,51 @@ class TestExecuteSingleStepConsumesFullGenerator:
         assert 2 in iterations_seen, "Execution phase (iteration 2) was never reached — loop broke too early"
         assert result is not None
         assert len(result.steps) == 1
+
+    async def test_computer_call_action_logged_at_info(self, caplog) -> None:
+        """Each computer_call item must emit an INFO log line with action type and coords.
+
+        Without this, the only signal a click was issued is whether the verifier
+        passed afterwards — which makes coordinate misses impossible to diagnose
+        from the training run output alone.
+        """
+        import logging
+
+        instructions = iter([("Click the login button", "Modal opens"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+        )
+
+        verifier = _mock_verifier([_mock_verification_result(passed=True)])
+        with (
+            caplog.at_level(logging.INFO, logger="soren.services.training_session"),
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        action_records = [
+            r for r in caplog.records if r.name == "soren.services.training_session" and "CUA action" in r.getMessage()
+        ]
+        assert action_records, (
+            f"Expected at least one INFO 'CUA action' log line; got {[r.getMessage() for r in caplog.records]}"
+        )
+        msg = action_records[0].getMessage()
+        # _make_cua_plan() emits click at x=100 y=200
+        assert "click" in msg
+        assert "100" in msg
+        assert "200" in msg
 
     async def test_plan_only_first_yield_has_no_screenshot(self) -> None:
         iterations_seen: list[int] = []

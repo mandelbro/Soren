@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
 from soren.cli import cli
+from soren.cli.train import _TRAINING_LOGGERS, _configure_training_logging
 
 
 @pytest.fixture
@@ -160,3 +162,57 @@ class TestRichTrainingCallbacks:
         assert hasattr(cb, "get_expected_after")
         assert hasattr(cb, "show_message")
         assert hasattr(cb, "show_error")
+
+
+class TestConfigureTrainingLogging:
+    """Without this configuration, click coordinates and VNC scale factor stay invisible."""
+
+    def _reset_loggers(self):
+        for name in _TRAINING_LOGGERS:
+            lg = logging.getLogger(name)
+            lg.handlers = [h for h in lg.handlers if not getattr(h, "_soren_training_handler", False)]
+            lg.setLevel(logging.NOTSET)
+            lg.propagate = True
+
+    def test_default_promotes_loggers_to_info(self):
+        self._reset_loggers()
+        try:
+            _configure_training_logging(debug=False)
+            for name in _TRAINING_LOGGERS:
+                assert logging.getLogger(name).level == logging.INFO, f"{name} not at INFO"
+        finally:
+            self._reset_loggers()
+
+    def test_debug_flag_promotes_loggers_to_debug(self):
+        self._reset_loggers()
+        try:
+            _configure_training_logging(debug=True)
+            for name in _TRAINING_LOGGERS:
+                assert logging.getLogger(name).level == logging.DEBUG, f"{name} not at DEBUG"
+        finally:
+            self._reset_loggers()
+
+    def test_idempotent_does_not_attach_duplicate_handlers(self):
+        self._reset_loggers()
+        try:
+            _configure_training_logging(debug=False)
+            _configure_training_logging(debug=False)
+            _configure_training_logging(debug=True)
+            for name in _TRAINING_LOGGERS:
+                lg = logging.getLogger(name)
+                marked = [h for h in lg.handlers if getattr(h, "_soren_training_handler", False)]
+                assert len(marked) == 1, f"{name} has {len(marked)} training handlers, expected 1"
+        finally:
+            self._reset_loggers()
+
+    def test_run_command_accepts_debug_flag(self, runner):
+        with patch("soren.cli.train._configure_training_logging") as mock_cfg:
+            # Close the inner coroutine immediately so asyncio.run doesn't get
+            # an un-awaited coroutine warning when we mock it out.
+            def _consume_coro(coro):
+                coro.close()
+
+            with patch("soren.cli.train.asyncio.run", side_effect=_consume_coro):
+                result = runner.invoke(cli, ["train", "run", "test-source", "--debug"])
+            assert result.exit_code == 0, result.output
+            mock_cfg.assert_called_once_with(debug=True)

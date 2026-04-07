@@ -7,6 +7,7 @@ Provides ``soren train run <source>`` for interactive training sessions and
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,44 @@ from soren.services.training_session import TrainingCallbacks, TrainingSession
 from soren.services.vm_manager import VMManager
 
 console = Console()
+
+
+# Loggers whose INFO/DEBUG output is most useful when diagnosing a training run.
+# Bumped to INFO unconditionally and DEBUG when --debug is passed; the rest of
+# the application keeps Python's default WARNING threshold so noise stays low.
+_TRAINING_LOGGERS = (
+    "soren.services.training_session",
+    "soren.patches.vnc_screenshot",
+    "soren.verification.verifier",
+)
+
+
+_TRAINING_HANDLER_MARKER = "_soren_training_handler"
+
+
+def _configure_training_logging(debug: bool) -> None:
+    """Surface Soren's training-relevant loggers above the default WARNING level.
+
+    Without this, the click coordinates, VNC scale factor, and CUA action stream
+    are emitted at INFO/DEBUG and never reach the operator. We attach a single
+    Rich-friendly StreamHandler so the output interleaves cleanly with the Rich
+    panels printed by ``RichTrainingCallbacks``.
+    """
+    level = logging.DEBUG if debug else logging.INFO
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for name in _TRAINING_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(level)
+        lg.propagate = False
+        # Idempotent: skip if we've already attached a handler in this process.
+        if any(getattr(h, _TRAINING_HANDLER_MARKER, False) for h in lg.handlers):
+            continue
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        handler.setLevel(level)
+        setattr(handler, _TRAINING_HANDLER_MARKER, True)
+        lg.addHandler(handler)
+
 
 # Staleness thresholds per discovery document
 _LOGIN_STALE_DAYS = 30
@@ -135,8 +174,15 @@ def train():
 @click.option("--flow", type=click.Choice(["login", "discovery", "execution"]), default=None, help="Flow type to train")
 @click.option("--task-type", default=None, help="Task type (for execution flows)")
 @click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
-def train_run(source: str, flow: str | None, task_type: str | None, config: str | None) -> None:
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help="Emit DEBUG-level logs (otherwise INFO) for soren.* loggers — useful for diagnosing click misses.",
+)
+def train_run(source: str, flow: str | None, task_type: str | None, config: str | None, debug: bool) -> None:
     """Start an interactive training session for SOURCE."""
+    _configure_training_logging(debug=debug)
 
     async def _run() -> None:
         settings = load_settings(Path(config) if config else None)

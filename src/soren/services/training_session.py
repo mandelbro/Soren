@@ -534,6 +534,33 @@ class TrainingSession:
             logger.debug("Screenshot capture failed", exc_info=True)
         return None
 
+    @staticmethod
+    def _log_cua_action(item: dict[str, Any]) -> None:
+        """Emit one INFO log line summarising a CUA ``computer_call`` item.
+
+        The CUA SDK shape places the action dict directly under the ``action``
+        key (see ``agent/responses.py::make_click_item``).  Coordinates here
+        are still in VNC-image space; the rescaled screen-logical coordinates
+        are logged separately by ``soren.patches.vnc_screenshot``'s click
+        wrappers right before dispatch.
+        """
+        action = item.get("action")
+        if not isinstance(action, dict):
+            logger.info("CUA action: <unparseable item> %r", item)
+            return
+        action_type = action.get("type", "unknown")
+        x = action.get("x")
+        y = action.get("y")
+        # Filter to the keys most useful for diagnosing click misses; keep the
+        # whole action dict for less common types (drag, scroll, type, keypress).
+        if x is not None or y is not None:
+            extras = {k: v for k, v in action.items() if k not in {"type", "x", "y"}}
+            extras_str = f" {extras}" if extras else ""
+            logger.info("CUA action: %s x=%s y=%s%s", action_type, x, y, extras_str)
+        else:
+            payload = {k: v for k, v in action.items() if k != "type"}
+            logger.info("CUA action: %s %s", action_type, payload)
+
     async def _execute_single_step(
         self,
         instruction: str,
@@ -591,7 +618,13 @@ class TrainingSession:
                 if not isinstance(item, dict):
                     continue
                 item_type = item.get("type")
-                if item_type == "computer_call_output":
+                if item_type == "computer_call":
+                    # Surface the model's chosen action so coordinate misses are
+                    # immediately diagnosable from the training run output. The
+                    # rescaled (screen-logical) coordinates are logged separately
+                    # by the click wrappers in soren.patches.vnc_screenshot.
+                    self._log_cua_action(item)
+                elif item_type == "computer_call_output":
                     out = item.get("output", {})
                     if isinstance(out, dict):
                         img = out.get("image_url") or out.get("image") or out.get("screenshot")

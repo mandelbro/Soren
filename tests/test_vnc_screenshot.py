@@ -249,6 +249,211 @@ class TestPatchComputerClickScaling:
         assert interface.get_screen_size.await_count == 1
 
 
+class TestCursorWarpObservability:
+    """Cursor warp before click — visible feedback in the VM Screen Sharing window.
+
+    Behavior under test: each click wrapper must call ``interface.move_cursor`` at
+    the *post-rescaling* coordinates and pause briefly before dispatching the click.
+    The user watching the VM via Screen Sharing then sees the cursor jump to the
+    intended target — instant visual confirmation of where the model is aiming.
+    """
+
+    @pytest.mark.asyncio
+    async def test_left_click_warps_cursor_before_click(self):
+        """left_click wrapper must move_cursor to the rescaled coords first."""
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        call_order: list[str] = []
+
+        async def fake_move_cursor(x, y, delay=None):  # noqa: ARG001
+            call_order.append(f"move:{x},{y}")
+
+        async def fake_left_click(x, y, **kwargs):  # noqa: ARG001
+            call_order.append(f"click:{x},{y}")
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock(side_effect=fake_left_click)
+        interface.move_cursor = AsyncMock(side_effect=fake_move_cursor)
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch(
+            "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+            return_value=png_bytes,
+        ):
+            await interface.screenshot()  # init scale
+            await interface.left_click(960, 540)
+
+        assert call_order == ["move:960,540", "click:960,540"], f"Expected cursor warp before click; got {call_order}"
+
+    @pytest.mark.asyncio
+    async def test_right_click_warps_cursor_before_click(self):
+        """right_click wrapper must also warp the cursor first."""
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        call_order: list[str] = []
+
+        async def fake_move(x, y, delay=None):  # noqa: ARG001
+            call_order.append(f"move:{x},{y}")
+
+        async def fake_right(x, y, **kwargs):  # noqa: ARG001
+            call_order.append(f"click:{x},{y}")
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.right_click = AsyncMock(side_effect=fake_right)
+        interface.move_cursor = AsyncMock(side_effect=fake_move)
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch(
+            "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+            return_value=png_bytes,
+        ):
+            await interface.screenshot()
+            await interface.right_click(100, 200)
+
+        assert call_order == ["move:100,200", "click:100,200"]
+
+    @pytest.mark.asyncio
+    async def test_double_click_warps_cursor_before_click(self):
+        """double_click wrapper must also warp the cursor first."""
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        call_order: list[str] = []
+
+        async def fake_move(x, y, delay=None):  # noqa: ARG001
+            call_order.append(f"move:{x},{y}")
+
+        async def fake_double(x, y, **kwargs):  # noqa: ARG001
+            call_order.append(f"click:{x},{y}")
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.double_click = AsyncMock(side_effect=fake_double)
+        interface.move_cursor = AsyncMock(side_effect=fake_move)
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch(
+            "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+            return_value=png_bytes,
+        ):
+            await interface.screenshot()
+            await interface.double_click(50, 75)
+
+        assert call_order == ["move:50,75", "click:50,75"]
+
+    @pytest.mark.asyncio
+    async def test_click_warp_uses_post_rescale_coordinates(self):
+        """Cursor warp must use the rescaled (screen-logical) coords, not the raw VNC coords."""
+        import io
+
+        from PIL import Image
+
+        # 2x Retina VNC framebuffer vs 1920x1080 logical screen
+        buf = io.BytesIO()
+        Image.new("RGB", (3840, 2160)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        warp_target: dict[str, int] = {}
+
+        async def fake_move(x, y, delay=None):  # noqa: ARG001
+            warp_target["x"] = x
+            warp_target["y"] = y
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock()
+        interface.move_cursor = AsyncMock(side_effect=fake_move)
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch(
+            "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+            return_value=png_bytes,
+        ):
+            await interface.screenshot()
+            # VLM target (1920, 1080) in 3840x2160 VNC space => screen (960, 540)
+            await interface.left_click(1920, 1080)
+
+        assert warp_target == {"x": 960, "y": 540}, f"Expected warp at rescaled coords (960, 540); got {warp_target}"
+
+    @pytest.mark.asyncio
+    async def test_warp_skipped_when_move_cursor_unavailable(self):
+        """If interface has no move_cursor attribute the click must still dispatch."""
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        orig_left = AsyncMock()
+
+        computer = MagicMock(spec=["interface"])
+        # spec=["screenshot", "left_click", "right_click", "double_click", "get_screen_size"]
+        # leaves move_cursor genuinely missing (AttributeError on access)
+        interface = MagicMock(spec=["screenshot", "left_click", "right_click", "double_click", "get_screen_size"])
+        interface.left_click = orig_left
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch(
+            "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+            return_value=png_bytes,
+        ):
+            await interface.screenshot()
+            await interface.left_click(100, 200)  # must not raise
+
+        orig_left.assert_awaited_once_with(100, 200)
+
+
 class TestConnectComputer:
     @pytest.mark.asyncio
     async def test_connect_computer_creates_with_correct_args(self):

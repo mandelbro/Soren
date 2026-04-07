@@ -29,6 +29,8 @@ redundant async calls on every click.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 import subprocess
 import tempfile
@@ -36,6 +38,23 @@ from pathlib import Path
 from typing import Any
 
 VNC_URL_RE = re.compile(r"vnc://:([^@]+)@([^:]+):(\d+)")
+
+logger = logging.getLogger(__name__)
+
+
+def _cursor_warp_delay() -> float:
+    """Read the cursor warp pause from env (default 0.4s, 0 disables warp).
+
+    The warp pause makes the cursor visible on the VM Screen Sharing window
+    just before each click, giving the operator instant visual confirmation of
+    where the model is targeting. Set ``SOREN_CURSOR_WARP_DELAY=0`` to disable
+    (e.g. for unattended runs where latency matters).
+    """
+    raw = os.environ.get("SOREN_CURSOR_WARP_DELAY", "0.4")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.4
 
 
 def _parse_vnc_url(vnc_url: str) -> tuple[str, int, str]:
@@ -146,9 +165,7 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
                 _coord_scale["y"] = screen_h / vnc_h if vnc_h else 1.0
                 _scale_initialised[0] = True
 
-                import logging
-
-                logging.getLogger(__name__).debug(
+                logger.info(
                     "VNC coordinate scale: vnc=%dx%d screen=%dx%d scale=%.4fx%.4f",
                     vnc_w,
                     vnc_h,
@@ -158,9 +175,7 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
                     _coord_scale["y"],
                 )
             except Exception:
-                import logging
-
-                logging.getLogger(__name__).debug(
+                logger.warning(
                     "VNC coordinate scale initialisation failed; defaulting to 1:1",
                     exc_info=True,
                 )
@@ -176,6 +191,7 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     _orig_left_click = interface.left_click
     _orig_right_click = interface.right_click
     _orig_double_click = interface.double_click
+    _orig_move_cursor = getattr(interface, "move_cursor", None)
 
     def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
         """Scale (x, y) from VNC-image space to screen-logical space."""
@@ -183,16 +199,42 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         sy = round(y * _coord_scale["y"]) if y is not None else y
         return sx, sy
 
+    async def _warp_cursor(sx: Any, sy: Any) -> None:
+        """Move the VM cursor to the target before dispatching the click.
+
+        Makes click targets visible on the Screen Sharing window so the operator
+        can immediately see whether the model is aiming at the right element.
+        Silently no-ops when ``move_cursor`` is unavailable on the interface.
+        """
+        if _orig_move_cursor is None or sx is None or sy is None:
+            return
+        delay = _cursor_warp_delay()
+        try:
+            await _orig_move_cursor(sx, sy)
+        except Exception:
+            logger.debug("Cursor warp failed at (%s, %s); proceeding with click", sx, sy, exc_info=True)
+            return
+        if delay > 0:
+            import asyncio
+
+            await asyncio.sleep(delay)
+
     async def _left_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
         sx, sy = _scale_xy(x, y)
+        logger.info("VM left_click vnc=(%s,%s) screen=(%s,%s)", x, y, sx, sy)
+        await _warp_cursor(sx, sy)
         await _orig_left_click(sx, sy, **kwargs)
 
     async def _right_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
         sx, sy = _scale_xy(x, y)
+        logger.info("VM right_click vnc=(%s,%s) screen=(%s,%s)", x, y, sx, sy)
+        await _warp_cursor(sx, sy)
         await _orig_right_click(sx, sy, **kwargs)
 
     async def _double_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
         sx, sy = _scale_xy(x, y)
+        logger.info("VM double_click vnc=(%s,%s) screen=(%s,%s)", x, y, sx, sy)
+        await _warp_cursor(sx, sy)
         await _orig_double_click(sx, sy, **kwargs)
 
     interface.left_click = _left_click_scaled
