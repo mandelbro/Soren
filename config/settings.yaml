@@ -19,8 +19,8 @@ playbooks:
   write_back: true
 
 llm:
-  primary_model: "gemma3:27b-cloud"
-  fallback_model: "gemma3:4b"
+  primary_model: "gemma4:31b-cloud"
+  fallback_model: "gemma4:e4b"
 
 vlm:
   provider: "mlx"
