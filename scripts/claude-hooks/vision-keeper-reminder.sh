@@ -19,6 +19,7 @@ set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RFC_FILE="${REPO_ROOT}/docs/rfc.md"
+ADR_DIR="${REPO_ROOT}/docs/adr"
 
 if [[ ! -r "$RFC_FILE" ]]; then
   cat <<EOF
@@ -68,5 +69,30 @@ a contradiction.
 
 If the RFC itself needs to evolve (e.g., the user clarifies that the vision
 has expanded), update docs/rfc.md FIRST, then propose implementation changes
-against the updated spec. Do not work around the RFC; update it.
+against the updated spec. Do not work around the RFC; update it. For decisions
+that refine or supersede specific RFC sections, write an ADR (see docs/adr/)
+and let the ADR be the authoritative spec for that area. The vision-keeper
+subagent reads both the RFC and the ADRs on every audit; when they conflict,
+the more recent ADR wins.
 EOF
+
+# List the currently published ADRs so Claude sees which refinements are in
+# effect. A missing ADR for a topic means the RFC is still authoritative
+# there; a present ADR means the ADR refines or overrides the RFC.
+if [[ -d "$ADR_DIR" ]]; then
+  adr_files=$(find "$ADR_DIR" -maxdepth 1 -name "[0-9]*.md" -type f 2>/dev/null | sort)
+  if [[ -n "$adr_files" ]]; then
+    echo ""
+    echo "[VISION-KEEPER — PUBLISHED ADRs]"
+    echo "The following ADRs refine or supersede specific RFC sections. When"
+    echo "a proposal touches an area covered by an ADR, the ADR's decision is"
+    echo "authoritative. Read the full ADR before proposing changes in these areas:"
+    while IFS= read -r adr; do
+      # Extract the first line (title) from each ADR file
+      title=$(head -n 1 "$adr" | sed 's/^# //')
+      rel_path=${adr#"$REPO_ROOT/"}
+      echo "  * ${title}"
+      echo "    (${rel_path})"
+    done <<< "$adr_files"
+  fi
+fi
