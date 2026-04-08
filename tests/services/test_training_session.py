@@ -532,15 +532,18 @@ class TestRetryInstructionIncludesVerifierFeedback:
             f"Retry instructions should mention last click coords (100, 200); got: {retry_instructions!r}"
         )
 
-    async def test_system_prompt_warns_about_safari_chrome(self) -> None:
-        """CUA system prompt must tell UI-TARS about Safari's browser chrome layout.
+    async def test_system_prompt_warns_about_safari_chrome_when_crop_disabled(self, monkeypatch) -> None:
+        """CUA system prompt must tell UI-TARS about Safari's browser chrome layout
+        WHEN THE CROP IS DISABLED.
 
         Ground-truth screenshot showed UI-TARS was clicking at y~85 (inside
         Safari's toolbar) when the real target was at y~115 (inside the
         Sproutful page header). The model conflates 'top of screen' with
         'page header', and needs an explicit chrome boundary to break the
-        conflation.
+        conflation — but only when it's actually seeing the chrome.
         """
+        monkeypatch.delenv("SOREN_CHROME_CROP_Y", raising=False)
+
         instructions = iter([("Click Log in", "Modal visible"), ("/done", "")])
         cb = _mock_callbacks(
             get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
@@ -575,6 +578,56 @@ class TestRetryInstructionIncludesVerifierFeedback:
         # Must express the chrome/webpage boundary numerically so the model can ground it
         assert any(token in call_instructions for token in ("y=", "y >", "y<", "pixels", "px")), (
             f"System prompt should give UI-TARS a concrete numeric boundary: {call_instructions!r}"
+        )
+
+    async def test_chrome_prompt_omitted_when_crop_active(self, monkeypatch) -> None:
+        """When SOREN_CHROME_CROP_Y is set, UI-TARS sees a webpage-only image
+        with no Safari chrome. The chrome prompt's screen-space coordinates
+        ('webpage starts at y=100') are actively wrong in that case — they'd
+        tell the model to skip the webpage header (which, in the cropped image,
+        is at y=0-60). So the prompt must be OMITTED when crop is active.
+        """
+        monkeypatch.setenv("SOREN_CHROME_CROP_Y", "100")
+
+        instructions = iter([("Click Log in", "Modal visible"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+        )
+
+        verifier = _mock_verifier([_mock_verification_result(passed=True)])
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        call_instructions = MockAgent.call_args_list[0].kwargs.get("instructions", "")
+        # The chrome-specific guidance must NOT be in the prompt when crop is active.
+        # We check for the distinctive phrasing from _SAFARI_CHROME_PROMPT rather
+        # than generic words like "safari" (which may legitimately appear in task
+        # instructions written by the operator).
+        assert "CONTEXT: You are operating a macOS virtual machine with Safari" not in call_instructions, (
+            f"Chrome prompt should be omitted when crop is active; got: {call_instructions!r}"
+        )
+        assert "NEVER click at y<100" not in call_instructions, (
+            "Screen-space chrome guidance is wrong when UI-TARS sees a cropped image — "
+            "it would tell the model to skip the webpage header"
+        )
+        # The user's actual instruction must still be present
+        assert "Click Log in" in call_instructions, (
+            f"Original instruction must still be in the prompt: {call_instructions!r}"
         )
 
     async def test_third_attempt_carries_latest_reasoning_not_stale(self) -> None:

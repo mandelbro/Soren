@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
@@ -63,13 +64,40 @@ _POST_ACTION_SETTLE_DELAY = 1.5
 # decent connection without making training feel sluggish.
 _NAV_PAGE_LOAD_DELAY = 3.0
 
-# Chrome-aware system prompt prefix for UI-TARS. Ground-truth screenshots
-# showed UI-TARS-1.5-7B systematically confusing Safari's browser chrome
-# (toolbar, URL bar) with the webpage's own header — clicking at y~85
-# (inside Safari's toolbar) when asked to click a button in the "top-right
-# header" of a webpage whose real header was at y~115. This prefix gives the
-# model an explicit numeric boundary between browser chrome and webpage content
-# so it stops anchoring webpage elements to the top of the screen.
+
+def _chrome_crop_active() -> bool:
+    """Return True when ``SOREN_CHROME_CROP_Y`` is set to a positive integer.
+
+    Mirrors the logic in ``soren.patches.vnc_screenshot._chrome_crop_y`` but
+    returns a bool for cheap branching at prompt-assembly time. Kept here
+    (rather than imported from the patch module) because the patch module is
+    lazily applied and importing it at training_session load time would add
+    unwanted import-time side effects.
+    """
+    raw = os.environ.get("SOREN_CHROME_CROP_Y", "0")
+    try:
+        return int(raw) > 0
+    except ValueError:
+        return False
+
+
+# Chrome-aware system prompt prefix for UI-TARS. Only applied when
+# SOREN_CHROME_CROP_Y is NOT active. When the crop is active, UI-TARS sees a
+# webpage-only image and needs no chrome guidance — its "top of image" IS
+# the webpage header. When the crop is off, UI-TARS sees the full screen
+# including Safari's chrome and needs this prompt to avoid anchoring webpage
+# elements to the top of the screen (chrome region).
+#
+# Ground-truth screenshots showed UI-TARS-1.5-7B systematically confusing
+# Safari's browser chrome (toolbar, URL bar) with the webpage's own header —
+# clicking at y~85 (inside Safari's toolbar) when asked to click a button in
+# the "top-right header" of a webpage whose real header was at y~115. This
+# prefix gives the model an explicit numeric boundary between browser chrome
+# and webpage content. When the crop is enabled, the preprocessing does the
+# job the prompt was trying to do, and leaving the prompt in would be
+# actively harmful (its screen-space y-values are wrong for the cropped
+# image's coordinate frame — they'd tell the model to skip the webpage
+# header, which in the cropped view is at y=0-60).
 _SAFARI_CHROME_PROMPT = (
     "CONTEXT: You are operating a macOS virtual machine with Safari running at "
     "1024x768 resolution. Safari's browser chrome occupies the top portion of "
@@ -789,10 +817,19 @@ class TrainingSession:
         # so retry feedback only references the CURRENT attempt's click.
         self._last_click_xy = None
 
+        # Chrome prompt is only useful when UI-TARS is seeing the full screen
+        # (chrome + webpage). When SOREN_CHROME_CROP_Y is active, the VNC
+        # patch hands UI-TARS a webpage-only image, and the chrome prompt's
+        # screen-space coordinates ("webpage starts at y=100", "NEVER click
+        # at y<100") would tell the model to skip the webpage header — which,
+        # in the cropped image, is at y=0-60. Skip the prompt in that case;
+        # UI-TARS is already looking at a clean webpage image and doesn't
+        # need chrome guidance to target it correctly.
+        prompt_prefix = "" if _chrome_crop_active() else _SAFARI_CHROME_PROMPT
         agent = ComputerAgent(
             model=vlm_model,
             tools=[computer],
-            instructions=f"{_SAFARI_CHROME_PROMPT}Execute this single action: {instruction}",
+            instructions=f"{prompt_prefix}Execute this single action: {instruction}",
             screenshot_delay=0.5,
         )
         messages = [{"role": "user", "content": instruction}]
