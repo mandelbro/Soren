@@ -42,12 +42,16 @@ vm:
   name: "soren-vm"
   pristine_name: "soren-pristine"
   memory_gb: 8
-  # Display resolution the Lume VM boots with. Bumped from the prior 1024x768
-  # to give UI-TARS more pixels per UI element — small targets become a
-  # larger fraction of the pixel footprint at the same grounding error rate.
-  # Takes effect on next VM recreation (`just vm-reset` or the next
-  # recreate_every_n_cycles boundary).
-  display: "1440x900"
+  # NOTE: display resolution is currently fixed to whatever the pristine VM
+  # image was created with (1024x768 in the current soren-pristine). CUA's
+  # lume_api_run at `computer/providers/lume_api.py` does NOT pass display
+  # into the Lume API payload — only cpu, memory, storage, and
+  # sharedDirectories are forwarded. Setting a `display: ...` field here is
+  # silently dropped. To actually bump the VM resolution you must either:
+  #   (a) rebuild soren-pristine with a larger virtual display, or
+  #   (b) upstream-patch trycua/cua to include display in lume_api_run's payload.
+  # For now we accept 1024x768 and rely on SOREN_CHROME_CROP_Y=100 to give
+  # UI-TARS a 1024x668 webpage-only view (see ADR-0001).
   recreate_every_n_cycles: 10
   lume_url: "http://localhost:7777"
   # Session isolation: keep desktop clean for vision workflows.
