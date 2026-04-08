@@ -51,6 +51,11 @@
             "type": "command",
             "command": "node .claude/helpers/hook-handler.cjs route",
             "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/vision-keeper-reminder.sh",
+            "timeout": 3000
           }
         ]
       }

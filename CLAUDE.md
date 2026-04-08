@@ -2,6 +2,45 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Architectural Invariants (read this first)
+
+Soren has a non-negotiable architectural thesis documented in `docs/rfc.md`.
+Past Claude sessions have drifted toward solutions that contradict it under
+symptom-fixing pressure. Before making any architectural recommendation, you
+**must** hold these invariants in mind:
+
+1. **Vision-based execution only.** UI-TARS sees screenshots; a real mouse
+   and keyboard drive the VM via VNC/OS-level events. DOM automation
+   (Playwright, Selenium, BrowserMCP, JS injection, accessibility APIs for
+   web browsers) is explicitly rejected in RFC §Alternatives Considered #1
+   on bot-detection grounds.
+2. **Local-only inference.** Reasoning, action, and verification models all
+   run on-device (MLX or Ollama). No cloud LLM fallback in v1. No
+   Anthropic/OpenAI/Together/HuggingFace hosted endpoints for task
+   execution inference.
+3. **VM-isolated execution.** Target apps run inside the Lume macOS VM, not
+   on the host. Moving execution to the host punctures the bot-detection
+   guarantee.
+4. **"Operating like a human would use the app."** Credential delivery,
+   click dispatch, typing — all must go through GUI simulation, not APIs
+   or synthesized events. Bot-detection services distinguish real OS events
+   (`event.isTrusted === true`) from synthetic ones.
+
+**Before proposing any change that touches execution modality, inference
+location, VM boundary, or introduces a new external dependency that drives
+the VM, you MUST invoke the `vision-keeper` subagent**
+(`.claude/agents/vision-keeper.md`) to audit the proposal against the
+current RFC. The subagent will return `ALIGNED` / `CONTRADICTS` / `AMBIGUOUS`
+with specific RFC section citations. If it returns `CONTRADICTS`, either
+abandon the proposal or propose an RFC update FIRST (and get user approval)
+before implementing. Do not work around the RFC while leaving the RFC
+unchanged.
+
+The Vision-Keeper hook at `scripts/claude-hooks/vision-keeper-reminder.sh`
+runs on every prompt submission and re-injects the load-bearing invariants.
+If you ever propose something that contradicts a section the hook mentions,
+you are drifting — stop, consult the subagent, and course-correct.
+
 ## Project Overview
 
 Soren is a vision-based autonomous desktop agent framework for macOS VMs. It discovers tasks from external sources (surveys, emails, forms), executes them using UI automation inside a macOS VM (CUA SDK + UI-TARS VLM), verifies results via a separate VLM, and learns reusable playbooks from successful executions.
