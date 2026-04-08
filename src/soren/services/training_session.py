@@ -579,9 +579,20 @@ class TrainingSession:
         return screenshot, description
 
     async def _take_screenshot(self) -> bytes | None:
-        """Capture a screenshot from the computer interface."""
+        """Capture a screenshot from the computer interface for verification.
+
+        When chrome cropping is enabled for UI-TARS (via SOREN_CHROME_CROP_Y),
+        UI-TARS receives a cropped image but the verifier should still see the
+        full VM display including the Safari toolbar, so it retains context
+        like the URL bar for verification reasoning. We prefer
+        ``interface.screenshot_full`` if the VNC patch has exposed it,
+        falling back to ``interface.screenshot`` for interfaces that don't
+        distinguish (tests, other providers, etc.).
+        """
         try:
-            result = await self._computer.interface.screenshot()
+            interface = self._computer.interface
+            screenshot_fn = getattr(interface, "screenshot_full", None) or interface.screenshot
+            result = await screenshot_fn()
             if isinstance(result, bytes):
                 return result
             if isinstance(result, str):

@@ -532,6 +532,187 @@ class TestCursorWarpObservability:
         assert warnings, f"Expected WARNING 'Cursor warp disabled' log; got {[r.getMessage() for r in caplog.records]}"
 
 
+class TestChromeCropPreprocessing:
+    """Crop the top N pixels of the VNC screenshot before sending to UI-TARS.
+
+    Ground-truth screenshots showed UI-TARS-1.5-7B systematically clicking
+    in Safari's chrome instead of the webpage header, because its training
+    distribution had no concept of "browser chrome offset." Cropping the
+    chrome out of the image before inference removes the ambiguity: the
+    model's "top-right header" heuristic now correctly targets webpage
+    elements because the image it sees IS the webpage.
+
+    This is vision-pipeline preprocessing, fully consistent with the
+    RFC's vision-based mandate (see §Alternatives Considered #1 carve-out
+    for "screenshot preprocessing").
+    """
+
+    @pytest.mark.asyncio
+    async def test_crop_disabled_by_default_no_op(self, monkeypatch):
+        """With SOREN_CHROME_CROP_Y unset, behavior is identical to pre-crop."""
+        import io
+
+        from PIL import Image
+
+        monkeypatch.delenv("SOREN_CHROME_CROP_Y", raising=False)
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 900)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock()
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=png_bytes):
+            result = await interface.screenshot()
+
+        # When crop is disabled, returned bytes are the raw capture
+        assert result == png_bytes
+
+    @pytest.mark.asyncio
+    async def test_crop_removes_top_n_pixels_when_enabled(self, monkeypatch):
+        """With SOREN_CHROME_CROP_Y=100, the returned screenshot is 100px shorter."""
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setenv("SOREN_CHROME_CROP_Y", "100")
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 900)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock()
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=png_bytes):
+            result = await interface.screenshot()
+
+        # Decode the returned bytes and check its dimensions
+        cropped_img = Image.open(io.BytesIO(result))
+        assert cropped_img.size == (1440, 800), (
+            f"Cropped image should be 1440x800 (removed 100px from top); got {cropped_img.size}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_click_y_offset_added_when_crop_active(self, monkeypatch):
+        """UI-TARS coords are relative to the cropped image; dispatch must add the offset back."""
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setenv("SOREN_CHROME_CROP_Y", "100")
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 900)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        orig_left_click = AsyncMock()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = orig_left_click
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=png_bytes):
+            await interface.screenshot()
+            # UI-TARS saw a 1440x800 cropped image and says "click at (820, 15)"
+            # That's 15px from the top of the WEBPAGE (not top of screen).
+            # Expected: dispatch at (820, 15+100) = (820, 115) in screen space.
+            await interface.left_click(820, 15)
+
+        orig_left_click.assert_awaited_once_with(820, 115)
+
+    @pytest.mark.asyncio
+    async def test_screenshot_full_bypasses_crop(self, monkeypatch):
+        """interface.screenshot_full() must return uncropped bytes even when crop is active."""
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setenv("SOREN_CHROME_CROP_Y", "100")
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 900)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock()
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        # screenshot_full must exist after patching
+        assert hasattr(interface, "screenshot_full"), (
+            "patch_computer_screenshot must expose interface.screenshot_full for verifier use"
+        )
+
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=png_bytes):
+            full = await interface.screenshot_full()
+
+        full_img = Image.open(io.BytesIO(full))
+        assert full_img.size == (1440, 900), (
+            f"screenshot_full must return full image even when crop is enabled; got {full_img.size}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_invalid_crop_env_ignored(self, monkeypatch):
+        """Non-numeric or negative SOREN_CHROME_CROP_Y must be treated as 0 (no crop)."""
+        import io
+
+        from PIL import Image
+
+        monkeypatch.setenv("SOREN_CHROME_CROP_Y", "not-a-number")
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 900)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = AsyncMock()
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=png_bytes):
+            result = await interface.screenshot()
+
+        img = Image.open(io.BytesIO(result))
+        assert img.size == (1440, 900)
+
+
 class TestConnectComputer:
     @pytest.mark.asyncio
     async def test_connect_computer_creates_with_correct_args(self):

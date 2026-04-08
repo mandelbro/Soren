@@ -57,6 +57,64 @@ def _cursor_warp_delay() -> float:
         return 0.4
 
 
+def _chrome_crop_y() -> int:
+    """Read the browser-chrome crop height from env (default 0, no crop).
+
+    When > 0, the top N pixels of every VNC screenshot are removed before
+    being handed to UI-TARS, so the model sees only the webpage content area
+    rather than Safari's toolbar. Click coordinates returned by UI-TARS are
+    relative to the cropped image; the click wrappers add this offset back
+    before dispatching to the VM so the click lands at the correct screen
+    position.
+
+    Purpose: UI-TARS-1.5-7B was trained on screenshots where the entire image
+    is the target application. When given a full-screen Safari window, its
+    "top of image" priors incorrectly target the browser chrome instead of
+    the webpage header. Cropping the chrome out removes the ambiguity.
+
+    This is screenshot preprocessing only — it transforms the model's
+    perception, not the action transport. Fully consistent with the RFC's
+    vision-based mandate. Clicks are still dispatched as real OS mouse
+    events via CUA.
+
+    Set ``SOREN_CHROME_CROP_Y=100`` to enable for webpage click tasks. Leave
+    unset (default 0) for URL-bar tasks or any task that targets the Safari
+    toolbar itself.
+    """
+    raw = os.environ.get("SOREN_CHROME_CROP_Y", "0")
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _apply_crop(raw_bytes: bytes, crop_y: int) -> bytes:
+    """Return ``raw_bytes`` with the top ``crop_y`` pixels removed.
+
+    Returns the input bytes unchanged if ``crop_y`` is zero or would remove
+    the entire image height.
+    """
+    if crop_y <= 0:
+        return raw_bytes
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.open(BytesIO(raw_bytes))
+    w, h = img.size
+    if crop_y >= h:
+        logger.warning(
+            "Chrome crop %d >= image height %d; returning uncropped bytes",
+            crop_y,
+            h,
+        )
+        return raw_bytes
+    cropped = img.crop((0, crop_y, w, h))
+    out = BytesIO()
+    cropped.save(out, format="PNG")
+    return out.getvalue()
+
+
 def _parse_vnc_url(vnc_url: str) -> tuple[str, int, str]:
     """Parse VNC URL vnc://:password@host:port into (host, port, password)."""
     if not vnc_url:
@@ -135,7 +193,13 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     _coord_scale: dict[str, float] = {"x": 1.0, "y": 1.0}
     _scale_initialised: list[bool] = [False]
 
-    async def _vnc_screenshot() -> bytes:
+    async def _capture_raw_and_init_scale() -> bytes:
+        """Fetch a fresh VNC screenshot and ensure coord scale is initialised.
+
+        Shared helper for both ``_vnc_screenshot`` (used by UI-TARS, may be
+        cropped) and ``_vnc_screenshot_full`` (used by the verifier, always
+        returns the unmodified image).
+        """
         host, port, password = await _discover_vnc_url(lume_client, vm_name)
         loop = asyncio.get_event_loop()
         screenshot_bytes = await loop.run_in_executor(
@@ -145,7 +209,8 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
         # Lazily compute the VNC-image → screen-logical scale factors.
         # We only need to do this once per session; the VM resolution doesn't
-        # change during a training run.
+        # change during a training run. Use the UNCROPPED image for the scale
+        # calculation so the scale factor is always full-image-relative.
         if not _scale_initialised[0]:
             try:
                 from io import BytesIO
@@ -183,8 +248,26 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
         return screenshot_bytes
 
-    # Replace screenshot
+    async def _vnc_screenshot() -> bytes:
+        """Screenshot consumed by UI-TARS. Cropped to remove Safari chrome when enabled."""
+        raw = await _capture_raw_and_init_scale()
+        crop_y = _chrome_crop_y()
+        if crop_y > 0:
+            return _apply_crop(raw, crop_y)
+        return raw
+
+    async def _vnc_screenshot_full() -> bytes:
+        """Unmodified screenshot for verification, baselines, and anywhere
+        the caller needs to see the complete VM display (including Safari
+        chrome). The verifier uses this so it retains context like the URL
+        bar even when UI-TARS is receiving cropped input.
+        """
+        return await _capture_raw_and_init_scale()
+
+    # Replace screenshot with the (possibly cropped) variant and expose
+    # screenshot_full for callers that need the unmodified image.
     interface.screenshot = _vnc_screenshot
+    interface.screenshot_full = _vnc_screenshot_full
 
     # --- Click/coordinate wrappers ---
 
@@ -204,7 +287,17 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         logger.info("Cursor warp enabled (interface=%s)", type(interface).__name__)
 
     def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
-        """Scale (x, y) from VNC-image space to screen-logical space."""
+        """Scale (x, y) from VNC-image space to screen-logical space.
+
+        If chrome cropping is active, the incoming ``y`` is relative to the
+        cropped image (UI-TARS sees the webpage area only). Add the crop
+        offset back BEFORE applying the VNC→screen scale so the click lands
+        at the correct absolute screen position.
+        """
+        if y is not None:
+            crop_y = _chrome_crop_y()
+            if crop_y > 0:
+                y = y + crop_y
         sx = round(x * _coord_scale["x"]) if x is not None else x
         sy = round(y * _coord_scale["y"]) if y is not None else y
         return sx, sy

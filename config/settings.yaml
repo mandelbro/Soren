@@ -42,6 +42,12 @@ vm:
   name: "soren-vm"
   pristine_name: "soren-pristine"
   memory_gb: 8
+  # Display resolution the Lume VM boots with. Bumped from the prior 1024x768
+  # to give UI-TARS more pixels per UI element — small targets become a
+  # larger fraction of the pixel footprint at the same grounding error rate.
+  # Takes effect on next VM recreation (`just vm-reset` or the next
+  # recreate_every_n_cycles boundary).
+  display: "1440x900"
   recreate_every_n_cycles: 10
   lume_url: "http://localhost:7777"
   # Session isolation: keep desktop clean for vision workflows.
