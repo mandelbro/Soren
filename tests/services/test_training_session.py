@@ -224,6 +224,119 @@ class TestAutoVerifyFailRetries:
         cb.show_message.assert_any_call("Verification failed. Auto-retrying (1/3)...")
 
 
+class TestRetryInstructionIncludesVerifierFeedback:
+    """Regression test: retries must feed the verifier's failure reasoning back
+    to UI-TARS so the model has a signal to pick a different element.
+
+    Before this change, retries re-used the identical instruction on every
+    attempt, and UI-TARS would lock onto the same (wrong) coordinates — the
+    retry logic was effectively a no-op against deterministic models.
+    """
+
+    async def test_second_attempt_instruction_carries_verifier_reasoning(self) -> None:
+        instructions = iter([("Click the Log in button", "Login modal visible"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+            max_verify_retries=3,
+        )
+
+        verifier_reasoning = (
+            "The screenshot shows the homepage with a 'LOG IN OR SIGN UP' text "
+            "but no modal with input fields. That text is part of the page content, "
+            "not a modal overlay."
+        )
+        verifier = _mock_verifier(
+            [
+                _mock_verification_result(passed=False, reasoning=verifier_reasoning),
+                _mock_verification_result(passed=True),
+            ]
+        )
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        # Two ComputerAgent constructions expected: one per attempt.
+        assert MockAgent.call_count == 2, (
+            f"Expected 2 ComputerAgent constructions (1 original + 1 retry); got {MockAgent.call_count}"
+        )
+
+        # Attempt 1 (index 0): the original instruction only — no feedback.
+        attempt1_kwargs = MockAgent.call_args_list[0].kwargs
+        attempt1_instructions = attempt1_kwargs.get("instructions", "")
+        assert "Click the Log in button" in attempt1_instructions
+        assert "LOG IN OR SIGN UP" not in attempt1_instructions, (
+            "First attempt should not carry verifier feedback (there is none yet)"
+        )
+
+        # Attempt 2 (index 1): instructions must carry the verifier reasoning
+        # AND the original instruction AND a clear "this is a retry" framing.
+        attempt2_kwargs = MockAgent.call_args_list[1].kwargs
+        attempt2_instructions = attempt2_kwargs.get("instructions", "")
+        assert "Click the Log in button" in attempt2_instructions, "Retry must still include the original instruction"
+        assert "LOG IN OR SIGN UP" in attempt2_instructions, (
+            "Retry instructions must include the verifier's failure reasoning"
+        )
+        # Retry should also clearly signal that previous attempt failed
+        assert "retry" in attempt2_instructions.lower() or "previous" in attempt2_instructions.lower(), (
+            "Retry instructions should clearly frame this as a correction of a prior attempt"
+        )
+
+    async def test_third_attempt_carries_latest_reasoning_not_stale(self) -> None:
+        """Each retry carries the MOST RECENT verifier reasoning, not the first one."""
+        instructions = iter([("Click login", "Modal visible"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+            max_verify_retries=3,
+        )
+
+        verifier = _mock_verifier(
+            [
+                _mock_verification_result(passed=False, reasoning="FIRST_REASON_hit_nav_bar"),
+                _mock_verification_result(passed=False, reasoning="SECOND_REASON_hit_hero"),
+                _mock_verification_result(passed=True),
+            ]
+        )
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        assert MockAgent.call_count == 3
+        attempt3_instructions = MockAgent.call_args_list[2].kwargs.get("instructions", "")
+        # Third attempt must use SECOND reason (the most recent failure), not FIRST
+        assert "SECOND_REASON_hit_hero" in attempt3_instructions
+        assert "FIRST_REASON_hit_nav_bar" not in attempt3_instructions, (
+            "Retry should carry only the most recent verifier reasoning, not a growing log"
+        )
+
+
 class TestRetriesExhaustedHumanSkip:
     """All 3 verification attempts fail, human chooses skip — step NOT recorded."""
 

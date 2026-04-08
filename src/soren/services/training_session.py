@@ -361,6 +361,11 @@ class TrainingSession:
     ) -> tuple[bytes, str, bool] | None:
         """Execute instruction, auto-verify against expected_after, retry on failure.
 
+        On retry attempts (attempt >= 2), the instruction is augmented with the
+        previous verifier's failure reasoning so UI-TARS has a corrective signal
+        and stops picking the same (wrong) coordinates. Without this augmentation
+        the retry is effectively a no-op against deterministic models.
+
         Returns ``(screenshot, description, verification_passed)`` on success/acceptance,
         or ``None`` if the step was skipped.
         Raises ``_TrainingAbortRequested`` if the human chooses abort.
@@ -371,8 +376,22 @@ class TrainingSession:
         last_description: str = ""
 
         for attempt in range(1, max_retries + 1):
-            # 1. Execute via CUA (reuses existing retry-on-exception logic)
-            screenshot, description = await self._try_execute_step(instruction)
+            # 1. Execute via CUA (reuses existing retry-on-exception logic).
+            # On retry, thread the verifier's most recent failure reasoning into
+            # the instruction so UI-TARS has a corrective signal.
+            if attempt > 1 and last_reasoning:
+                effective_instruction = self._compose_retry_instruction(
+                    instruction, attempt, max_retries, last_reasoning
+                )
+                logger.info(
+                    "Retry attempt %d/%d — augmenting instruction with verifier feedback (%d chars of reasoning)",
+                    attempt,
+                    max_retries,
+                    len(last_reasoning),
+                )
+            else:
+                effective_instruction = instruction
+            screenshot, description = await self._try_execute_step(effective_instruction)
             if screenshot is None:
                 return None  # CUA execution failed entirely
             last_screenshot, last_description = screenshot, description
@@ -533,6 +552,29 @@ class TrainingSession:
         except Exception:
             logger.debug("Screenshot capture failed", exc_info=True)
         return None
+
+    @staticmethod
+    def _compose_retry_instruction(
+        original: str,
+        attempt: int,
+        max_attempts: int,
+        last_reasoning: str,
+    ) -> str:
+        """Build a retry instruction that feeds verifier feedback back to UI-TARS.
+
+        The original instruction is preserved verbatim and augmented with a
+        clearly delimited correction section. Only the MOST RECENT reasoning
+        is included — retry context should not grow unboundedly across attempts.
+        """
+        return (
+            f"{original}\n\n"
+            f"IMPORTANT — This is retry attempt {attempt}/{max_attempts}. "
+            f"Your previous attempt FAILED verification.\n"
+            f"Verifier feedback on why it failed:\n"
+            f"{last_reasoning}\n\n"
+            f"Try a DIFFERENT element or screen location this time. "
+            f"Do not repeat the same action as your previous attempt."
+        )
 
     @staticmethod
     def _log_cua_action(item: dict[str, Any]) -> None:
