@@ -17,8 +17,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from soren.models.persona import Persona
 from soren.services.config_loader import load_settings
 from soren.services.llm_service import LLMService
+from soren.services.persona_loader import get_personas_dir, load_all
 from soren.services.playbook_service import PlaybookService
 from soren.services.training_session import TrainingCallbacks, TrainingSession
 from soren.services.vm_manager import VMManager
@@ -76,6 +78,35 @@ def _configure_training_logging(debug: bool) -> None:
 
     for name in _SILENCED_NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.ERROR)
+
+
+def _resolve_source_url(
+    source_name: str,
+    url_flag: str | None,
+    personas: list[Persona],
+) -> str:
+    """Resolve the task source URL for training-mode auto-navigation.
+
+    Precedence:
+      1. ``url_flag`` (explicit ``--url`` CLI argument) wins if provided.
+      2. Otherwise scan ``personas`` in load order for a task_source whose
+         ``name`` matches ``source_name`` and whose ``url`` is non-empty.
+         The first match wins.
+      3. If neither is available, return "" so TrainingSession skips
+         auto-navigation and falls back to human-instructed navigation.
+
+    This lets the operator run ``soren train run sproutful`` and have the
+    URL automatically picked up from ``config/personas/*.yaml``'s
+    ``task_sources`` list — the URL is already configured there for
+    discovery, no reason to require re-entry at training time.
+    """
+    if url_flag:
+        return url_flag
+    for persona in personas:
+        for source in persona.task_sources:
+            if source.name == source_name and source.url:
+                return source.url
+    return ""
 
 
 # Staleness thresholds per discovery document
@@ -223,6 +254,14 @@ def train_run(
         ps = PlaybookService(settings, llm)
         callbacks = RichTrainingCallbacks()
 
+        # Resolve the URL for auto-navigation: explicit --url wins, else
+        # look up the source by name in the persona task_sources list.
+        personas = load_all(get_personas_dir())
+        resolved_url = _resolve_source_url(source_name=source, url_flag=url, personas=personas)
+        if resolved_url:
+            origin = "--url flag" if url else "persona task_source"
+            console.print(f"[dim]Auto-navigate URL: {resolved_url} (from {origin})[/dim]")
+
         flows_to_train = [flow] if flow else list(_ALL_FLOWS)
 
         for ft in flows_to_train:
@@ -241,7 +280,7 @@ def train_run(
                 callbacks=callbacks,
                 source_name=source,
                 flow_type=ft,
-                source_url=url or "",
+                source_url=resolved_url,
                 task_type=task_type if ft == "execution" else None,
                 verification_model=settings.verification.model,
             )

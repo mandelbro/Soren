@@ -230,6 +230,80 @@ class TestConfigureTrainingLogging:
             mock_cfg.assert_called_once_with(debug=True)
 
 
+class TestUrlResolvedFromPersona:
+    """The CLI looks up the task source URL from persona task_sources when
+    --url is not explicitly provided, so the operator doesn't have to retype
+    it every training run. Persona files already carry the URL — this is
+    pure plumbing."""
+
+    @staticmethod
+    def _persona_with_source(source_name: str, url: str):
+        """Build a minimal Persona object with one task_source."""
+        from soren.models.persona import Persona
+        from soren.models.task_source import TaskSource
+
+        return Persona(
+            name="Test Persona",
+            id="test",
+            description="test",
+            task_sources=[TaskSource(name=source_name, url=url, credential_ref="x")],
+        )
+
+    def test_persona_url_used_when_flag_absent(self, runner):
+        """When --url is not passed, the CLI finds the source by name in
+        the persona task_sources list and uses that URL."""
+        from soren.cli.train import _resolve_source_url
+
+        personas = [self._persona_with_source("sproutful", "https://sproutful.com/home")]
+        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        assert resolved == "https://sproutful.com/home"
+
+    def test_explicit_url_flag_overrides_persona(self, runner):
+        """When --url IS passed, it takes precedence over the persona URL."""
+        from soren.cli.train import _resolve_source_url
+
+        personas = [self._persona_with_source("sproutful", "https://sproutful.com/home")]
+        resolved = _resolve_source_url(
+            source_name="sproutful",
+            url_flag="https://override.example.com",
+            personas=personas,
+        )
+        assert resolved == "https://override.example.com"
+
+    def test_no_url_when_source_not_in_any_persona(self, runner):
+        """If the source name doesn't match any persona task_source, return
+        empty string — the training session will skip auto-navigation."""
+        from soren.cli.train import _resolve_source_url
+
+        personas = [self._persona_with_source("other-source", "https://other.example.com")]
+        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        assert resolved == ""
+
+    def test_first_matching_persona_wins(self, runner):
+        """When multiple personas list the same source, the first match with
+        a non-empty URL is used. Personas are scanned in load order."""
+        from soren.cli.train import _resolve_source_url
+
+        personas = [
+            self._persona_with_source("sproutful", "https://first.example.com"),
+            self._persona_with_source("sproutful", "https://second.example.com"),
+        ]
+        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        assert resolved == "https://first.example.com"
+
+    def test_empty_persona_url_skipped(self, runner):
+        """A persona with a matching source name but url='' is skipped;
+        if another persona has a non-empty URL for the same source, that's used."""
+        from soren.cli.train import _resolve_source_url
+
+        personas = [
+            self._persona_with_source("sproutful", ""),  # matches name but no URL
+            self._persona_with_source("sproutful", "https://has-url.example.com"),
+        ]
+        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        assert resolved == "https://has-url.example.com"
+
+
 class TestTrainRunUrlFlag:
     """--url flag threads into TrainingSession.source_url so _navigate can
     auto-dispatch Cmd+L + type URL + Return via the keyboard path (ADR-0001).
@@ -248,8 +322,12 @@ class TestTrainRunUrlFlag:
 
     def test_url_flag_threaded_to_session(self, runner):
         """Running `train run SOURCE --url https://example.com` must construct
-        TrainingSession with source_url set to that URL."""
+        TrainingSession with source_url set to that URL, even if a persona
+        has a different URL configured (flag wins over persona)."""
         MockSession = self._patched_session_cls()
+        persona_with_different_url = TestUrlResolvedFromPersona._persona_with_source(
+            "sproutful", "https://from-persona.example.com"
+        )
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
@@ -257,6 +335,7 @@ class TestTrainRunUrlFlag:
             patch("soren.cli.train.LLMService"),
             patch("soren.cli.train.VMManager"),
             patch("soren.cli.train.PlaybookService"),
+            patch("soren.cli.train.load_all", return_value=[persona_with_different_url]),
         ):
             result = runner.invoke(
                 cli,
@@ -267,13 +346,14 @@ class TestTrainRunUrlFlag:
         assert MockSession.called, "TrainingSession should be instantiated"
         ctor_kwargs = MockSession.call_args.kwargs
         assert ctor_kwargs.get("source_url") == "https://sproutful.com", (
-            f"Expected source_url='https://sproutful.com'; got {ctor_kwargs.get('source_url')!r}"
+            f"Expected source_url='https://sproutful.com' (flag wins); got {ctor_kwargs.get('source_url')!r}"
         )
 
-    def test_url_flag_absent_defaults_to_empty_string(self, runner):
-        """When --url is omitted, TrainingSession.source_url defaults to ''
-        (the existing behavior — no auto-navigation)."""
+    def test_url_from_persona_when_flag_absent(self, runner):
+        """When --url is omitted, the CLI looks up the URL from the persona
+        task_sources list by source name."""
         MockSession = self._patched_session_cls()
+        persona = TestUrlResolvedFromPersona._persona_with_source("sproutful", "https://sproutful.com/home")
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
@@ -281,10 +361,36 @@ class TestTrainRunUrlFlag:
             patch("soren.cli.train.LLMService"),
             patch("soren.cli.train.VMManager"),
             patch("soren.cli.train.PlaybookService"),
+            patch("soren.cli.train.load_all", return_value=[persona]),
         ):
             result = runner.invoke(cli, ["train", "run", "sproutful", "--flow", "login"])
 
         assert result.exit_code == 0, result.output
         assert MockSession.called, "TrainingSession should be instantiated"
         ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "", f"Expected source_url=''; got {ctor_kwargs.get('source_url')!r}"
+        assert ctor_kwargs.get("source_url") == "https://sproutful.com/home", (
+            f"Expected source_url from persona; got {ctor_kwargs.get('source_url')!r}"
+        )
+
+    def test_source_url_empty_when_no_persona_match(self, runner):
+        """If neither --url nor any persona provides a URL, source_url is ''
+        and TrainingSession will skip auto-navigation."""
+        MockSession = self._patched_session_cls()
+        other_persona = TestUrlResolvedFromPersona._persona_with_source("other-source", "https://other.example.com")
+        with (
+            patch("soren.cli.train._configure_training_logging"),
+            patch("soren.cli.train.TrainingSession", MockSession),
+            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.LLMService"),
+            patch("soren.cli.train.VMManager"),
+            patch("soren.cli.train.PlaybookService"),
+            patch("soren.cli.train.load_all", return_value=[other_persona]),
+        ):
+            result = runner.invoke(cli, ["train", "run", "sproutful", "--flow", "login"])
+
+        assert result.exit_code == 0, result.output
+        assert MockSession.called, "TrainingSession should be instantiated"
+        ctor_kwargs = MockSession.call_args.kwargs
+        assert ctor_kwargs.get("source_url") == "", (
+            f"Expected source_url='' (no match); got {ctor_kwargs.get('source_url')!r}"
+        )
