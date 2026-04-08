@@ -22,7 +22,16 @@ This is a **greenfield project**. The only existing artifacts are this PRD and a
 
 ### Scope
 
-This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system running entirely on Apple Silicon hardware with local models. Multi-VM concurrency, cloud LLM fallback, desktop application automation, and real-time interfaces are explicitly deferred to future phases.
+This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system running entirely on Apple Silicon hardware with local models. Multi-VM concurrency, cloud LLM fallback, and real-time interfaces are explicitly deferred to future phases.
+
+**Application surface.** Soren targets *any* application running inside the macOS VM that a human could operate with a mouse, keyboard, and eyes — browsers, desktop apps, and cross-application workflows that span multiple apps within a single task. Examples of cross-application flows that must be first-class:
+
+- A desktop app that delegates sign-in to a web-based OAuth flow in Safari, then returns control to the desktop app
+- A website that requires clicking a verification link sent to a browser-based email client
+- A native survey tool that opens a supporting browser tab for documentation or media uploads
+- Any combination of apps that simulate a realistic human workflow
+
+The vision-based, local-only, VM-isolated constraints apply uniformly across this expanded surface. Targeting a native app does NOT unlock native toolkit APIs, accessibility-tree queries, or any other modality that would bypass the "operate like a human using their eyes, mouse, and keyboard" thesis. UI-TARS (or its successor local VLM) remains the grounding model; CUA's mouse/keyboard dispatch remains the action transport.
 
 ---
 
@@ -34,10 +43,11 @@ This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system
 2. **Single-command operation**: `just begin-soren-cycle` runs the full lifecycle autonomously.
 3. **Persona-driven behavior**: YAML-defined agent identities shape LLM responses and browser interaction patterns.
 4. **VM-isolated execution**: Each task runs inside a Lume macOS VM, providing OS-level isolation and bot-detection avoidance.
-5. **Vision-based task execution**: A CUA ComputerAgent driven by UI-TARS 1.5 7B takes screenshots, reasons about UI state, and executes mouse/keyboard actions.
+5. **Vision-based task execution**: A CUA ComputerAgent driven by UI-TARS 1.5 7B (or equivalent local VLM) takes screenshots, reasons about UI state, and executes mouse/keyboard actions. This applies uniformly to browsers AND native macOS applications inside the VM — vision-based grounding is the mandate regardless of app type.
 6. **Local-only inference**: Reasoning (Gemma3:12B), action (UI-TARS 1.5 7B), and verification (Qwen3-VL 8B) all run locally.
 7. **Self-improving playbooks**: Successful task executions write back step-by-step instructions to per-service markdown playbooks, reducing future re-discovery.
-8. **Encrypted credential storage**: Service credentials encrypted at rest, delivered to the VM browser via GUI input simulation. Credentials do not appear in automation logs, API calls, or host-side traffic.
+8. **Encrypted credential storage**: Service credentials encrypted at rest, delivered to the VM via GUI input simulation. Credentials do not appear in automation logs, API calls, or host-side traffic.
+9. **Cross-application workflow orchestration**: A single task may legitimately span multiple apps inside the VM (browser → email client → back to browser; native app → web OAuth → back to native app). The executor must carry task state across app transitions without losing context, and the verification/retry loop must reason about the currently-foregrounded app. This generalizes the "one task, one browser" assumption into "one task, one VM, any combination of apps a human would use to complete it."
 
 ### Non-Goals
 
@@ -45,7 +55,7 @@ This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system
 - Cloud LLM fallback (local models only in v1)
 - Concurrent multi-VM execution (one VM at a time)
 - Linux VM support (macOS VMs via Lume only)
-- Desktop application automation beyond the browser
+- DOM-based, accessibility-API-based, or toolkit-API-based automation of *any* app (browser or native). Automation of an app must go through the same vision-based, mouse/keyboard-driven pathway whether the app is Safari or a native macOS application. (See §Alternatives Considered #1.)
 - Real-time chat interface (batch cycle execution only)
 - Multi-user support (single operator, multiple personas)
 
@@ -395,13 +405,28 @@ sequenceDiagram
 
 | Criterion | DOM-Based | Vision-Based (Chosen) |
 |-----------|-----------|----------------------|
-| Bot detection | Easily detected (driver signatures, missing GPU rendering) | Undetectable (real browser, real rendering) |
+| Bot detection | Easily detected (driver signatures, missing GPU rendering, `event.isTrusted === false` on every synthesized event) | Undetectable (real browser, real rendering, real OS events) |
 | UI change resilience | Breaks when selectors change | Adapts via visual reasoning |
 | Implementation effort | Lower per-service | Higher initially, amortized via playbooks |
 | Speed | Faster (direct DOM) | Slower (screenshot → VLM → action) |
 | Debugging | Easier (DOM inspection) | Harder (visual reasoning is opaque) |
+| Honeypot resistance | Fills hidden fields unless explicitly filtered (cat-and-mouse) | Naturally skips invisible fields |
+| Behavioral CAPTCHAs | Fails v3/Turnstile — no cursor movement, no timing rhythm | Passes — real OS mouse events produce real movement curves |
+| Cross-application workflows | Inapplicable — DOM tools don't span apps | Handles any app a human can operate |
 
-**Decision**: Vision-based. The entire value proposition of Soren depends on undetectable automation. DOM-based tools are increasingly blocked, making them unreliable for production use.
+**Decision**: Vision-based. The entire value proposition of Soren depends on undetectable automation. DOM-based tools are increasingly blocked by modern bot detection services (Cloudflare Bot Management, DataDome, PerimeterX, Arkose Labs), making them unreliable for production use. Specifically, synthesized events from any DOM automation framework (Playwright, CDP `Runtime.evaluate`, AppleScript `do JavaScript`, browser extensions like BrowserMCP) produce events with `event.isTrusted === false`, which modern anti-fraud libraries use as a tripwire for sensitive actions.
+
+**This decision extends to native macOS applications.** The same logic that rejects DOM automation for browsers rejects:
+- Accessibility API automation (`AXUIElement`, `NSAccessibility`) for native apps — these produce synthetic events with detectable signatures and skip the OS input pipeline
+- AppleScript / osascript dispatch of app actions (`tell application "Safari" to do JavaScript …`, `tell application "Mail" to make new outgoing message`) — same synthetic-event problem plus `System Events.keystroke` produces events without natural timing rhythm
+- Direct app SDK integrations (Safari WebDriver, Mail API, etc.)
+- Any tool (browsermcp, playwright-mcp, chrome-devtools-mcp, Stagehand, or equivalents for native apps) that drives an app through a non-GUI-simulation pathway
+
+The mandate is: **operate like a human would use the app**. If a human moves the mouse and clicks, Soren moves the mouse and clicks. If a human tabs through fields, Soren tabs through fields — via real keyboard events, not synthesized ones. The only shortcut that's allowed is screenshot preprocessing (cropping, scaling, masking) before the VLM sees the image, because that's a transformation of the model's perception, not of the action transport.
+
+**Carve-out: VM state management.** This rejection applies to *task actions* — the things the agent does inside an app to complete a task. It does NOT apply to VM-level infrastructure control that happens *between* tasks or as session-reset housekeeping. osascript usage for closing Safari windows, opening a fresh browser window, switching macOS Spaces, checking window counts, or quitting non-allowlisted apps is permitted, because those actions are at the same level a human operator uses Activity Monitor, Dock, or Mission Control — they are VM/session concerns, not in-app task execution. The test is: *would a real human operator completing this task perform this action as part of the task, or is it environment setup?* If the latter, osascript is fine. If the former, it must go through the vision-based mouse/keyboard pathway.
+
+**What this means in practice.** Proposals to add browser automation frameworks, MCP servers that drive apps via non-GUI paths, or cloud-hosted automation services must be rejected by the Vision-Keeper subagent with a citation to this section. Vision-based grounding via a local VLM is the only sanctioned execution modality for task actions. Improvements to grounding accuracy must come from better models, better preprocessing, better prompting, or better retry logic — never from abandoning the vision-based constraint.
 
 ### 2. Single Monolith vs Microservices
 
