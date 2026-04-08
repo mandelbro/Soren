@@ -13,6 +13,7 @@ deterministic testing without CLI coupling.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 from datetime import UTC, datetime
@@ -54,6 +55,13 @@ _DEFAULT_MAX_VERIFY_RETRIES = 3
 # 1–2 seconds to render after the triggering click.  The SDK's own
 # screenshot_delay (0.5 s) is too short for these cases.
 _POST_ACTION_SETTLE_DELAY = 1.5
+
+# Seconds to wait after pressing Return at the end of auto-URL-navigation,
+# before the post-navigation screenshot is captured. Page loads take
+# significantly longer than in-page transitions — DNS, TLS, initial HTML,
+# above-the-fold rendering. 3 seconds covers most marketing sites on a
+# decent connection without making training feel sluggish.
+_NAV_PAGE_LOAD_DELAY = 3.0
 
 # Chrome-aware system prompt prefix for UI-TARS. Ground-truth screenshots
 # showed UI-TARS-1.5-7B systematically confusing Safari's browser chrome
@@ -335,7 +343,8 @@ class TrainingSession:
         await self._callbacks.show_screenshot(screenshot or b"", description)
 
     async def _auto_navigate_to_url(self, url: str) -> None:
-        """Dispatch Cmd+L -> type URL -> Return via the CUA keyboard transport.
+        """Dispatch Cmd+L -> type URL -> Return via the CUA keyboard transport,
+        then wait for the page to load before returning.
 
         This method deliberately does NOT go through UI-TARS or any VLM.
         It is a hardcoded sequence that simulates the keyboard shortcut a
@@ -349,9 +358,14 @@ class TrainingSession:
         the next input event, producing a more human-like timing rhythm
         (per ADR-0001 constraint: "realistic typing rhythm, standard
         hotkeys only").
-        """
-        import asyncio
 
+        A final page-load sleep (``_NAV_PAGE_LOAD_DELAY``) gives the target
+        page time to actually load before the caller captures a
+        post-navigation screenshot. Without this, the "Current Screen"
+        panel in the training UI displays stale pre-navigation content
+        because the VNC screenshot fires before Safari has even completed
+        the DNS lookup.
+        """
         interface = self._computer.interface
         logger.info("Auto-navigate: dispatching Cmd+L -> type %r -> Return", url)
 
@@ -369,6 +383,14 @@ class TrainingSession:
 
         # Submit
         await interface.press_key("return")
+
+        # Wait for the page to load before returning control to the caller.
+        # The caller (_navigate) immediately captures a screenshot via
+        # _capture_and_describe — if we don't wait here, that screenshot
+        # captures the pre-navigation state because Safari hasn't finished
+        # even the DNS lookup yet.
+        logger.info("Auto-navigate: waiting %.1fs for page to load", _NAV_PAGE_LOAD_DELAY)
+        await asyncio.sleep(_NAV_PAGE_LOAD_DELAY)
 
     # --- STEP_LOOP (autonomous verify+retry) ---
 
@@ -754,8 +776,6 @@ class TrainingSession:
         the screen.  The mid-loop screenshot is kept as a fallback in case the
         post-loop capture fails.
         """
-        import asyncio
-
         from soren.patches import apply_all
 
         apply_all()

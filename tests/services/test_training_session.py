@@ -330,6 +330,61 @@ class TestAutoNavigateViaKeyboard:
             f"No ComputerAgent should be created for navigation; got {MockAgent.call_count} calls"
         )
 
+    async def test_navigation_sleeps_long_enough_for_page_to_load(self) -> None:
+        """After press_key('return'), we must wait long enough for the page
+        to load before the post-navigation screenshot is captured.
+
+        Regression: the first cut of this feature took the "current screen"
+        screenshot immediately after Enter, so the panel displayed the
+        pre-navigation Safari Favorites page instead of the navigated-to
+        target. The fix is a post-Return sleep calibrated for realistic
+        page-load times (>= 2 seconds).
+        """
+        from soren.services import training_session as ts_module
+
+        cb = _mock_callbacks(get_instruction_with_expected=AsyncMock(return_value=("/done", "")))
+
+        vm = _mock_vm()
+        computer = AsyncMock()
+        computer.interface = AsyncMock()
+        computer.interface.hotkey = AsyncMock()
+        computer.interface.type_text = AsyncMock()
+        computer.interface.press_key = AsyncMock()
+        computer.interface.screenshot = AsyncMock(return_value=b"fake-screenshot")
+        vm.connect_computer = AsyncMock(return_value=computer)
+
+        session = TrainingSession(
+            vm_manager=vm,
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="sproutful",
+            flow_type="login",
+            source_url="https://sproutful.com",
+        )
+
+        # Patch asyncio.sleep on the training_session module so we can see
+        # what durations were requested during navigation, without actually
+        # sleeping for seconds in the test.
+        sleep_durations: list[float] = []
+
+        async def fake_sleep(duration):
+            sleep_durations.append(duration)
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT),
+            patch.object(ts_module.asyncio, "sleep", side_effect=fake_sleep),
+        ):
+            await session.run()
+
+        # We expect at least one sleep of >= 2 seconds to let the page load
+        # before the post-navigation screenshot is captured.
+        assert any(d >= 2.0 for d in sleep_durations), (
+            f"Expected a post-Return sleep of >= 2s for page load; got {sleep_durations}"
+        )
+        computer.interface.press_key.assert_any_await("return")
+
     async def test_no_navigation_when_url_empty(self) -> None:
         """If source_url is empty string (default), no keyboard dispatch happens."""
         cb = _mock_callbacks(get_instruction_with_expected=AsyncMock(return_value=("/done", "")))
