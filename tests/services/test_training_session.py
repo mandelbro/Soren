@@ -295,6 +295,95 @@ class TestRetryInstructionIncludesVerifierFeedback:
             "Retry instructions should clearly frame this as a correction of a prior attempt"
         )
 
+    async def test_retry_includes_last_click_coordinates(self) -> None:
+        """Retry feedback must carry the exact (x, y) of the previous failed click.
+
+        Generic reasoning ("modal didn't appear") is weaker than concrete data
+        ("you clicked at (100, 200) which is in Safari's toolbar"). Without the
+        actual coords in the retry prompt, UI-TARS has no way to understand
+        which pixel was wrong.
+        """
+        instructions = iter([("Click the Log in button", "Login modal visible"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+            max_verify_retries=3,
+        )
+
+        verifier = _mock_verifier(
+            [
+                _mock_verification_result(passed=False, reasoning="No modal visible"),
+                _mock_verification_result(passed=True),
+            ]
+        )
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        # _make_cua_plan() emits click x=100 y=200; retry (call index 1) must cite those
+        retry_instructions = MockAgent.call_args_list[1].kwargs.get("instructions", "")
+        assert "100" in retry_instructions and "200" in retry_instructions, (
+            f"Retry instructions should mention last click coords (100, 200); got: {retry_instructions!r}"
+        )
+
+    async def test_system_prompt_warns_about_safari_chrome(self) -> None:
+        """CUA system prompt must tell UI-TARS about Safari's browser chrome layout.
+
+        Ground-truth screenshot showed UI-TARS was clicking at y~85 (inside
+        Safari's toolbar) when the real target was at y~115 (inside the
+        Sproutful page header). The model conflates 'top of screen' with
+        'page header', and needs an explicit chrome boundary to break the
+        conflation.
+        """
+        instructions = iter([("Click Log in", "Modal visible"), ("/done", "")])
+        cb = _mock_callbacks(
+            get_instruction_with_expected=AsyncMock(side_effect=lambda: next(instructions)),
+        )
+
+        session = TrainingSession(
+            vm_manager=_mock_vm(),
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="prolific",
+            flow_type="login",
+        )
+
+        verifier = _mock_verifier([_mock_verification_result(passed=True)])
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_get_verifier", return_value=verifier),
+        ):
+            MockAgent.return_value = _patched_cua()
+            await session.run()
+
+        call_instructions = MockAgent.call_args_list[0].kwargs.get("instructions", "")
+        # The chrome warning must mention Safari AND a concrete y boundary
+        lowered = call_instructions.lower()
+        assert "safari" in lowered, f"System prompt missing Safari chrome note: {call_instructions!r}"
+        assert "chrome" in lowered or "toolbar" in lowered, (
+            f"System prompt should mention browser chrome or toolbar: {call_instructions!r}"
+        )
+        # Must express the chrome/webpage boundary numerically so the model can ground it
+        assert any(token in call_instructions for token in ("y=", "y >", "y<", "pixels", "px")), (
+            f"System prompt should give UI-TARS a concrete numeric boundary: {call_instructions!r}"
+        )
+
     async def test_third_attempt_carries_latest_reasoning_not_stale(self) -> None:
         """Each retry carries the MOST RECENT verifier reasoning, not the first one."""
         instructions = iter([("Click login", "Modal visible"), ("/done", "")])

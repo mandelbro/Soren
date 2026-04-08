@@ -55,6 +55,32 @@ _DEFAULT_MAX_VERIFY_RETRIES = 3
 # screenshot_delay (0.5 s) is too short for these cases.
 _POST_ACTION_SETTLE_DELAY = 1.5
 
+# Chrome-aware system prompt prefix for UI-TARS. Ground-truth screenshots
+# showed UI-TARS-1.5-7B systematically confusing Safari's browser chrome
+# (toolbar, URL bar) with the webpage's own header — clicking at y~85
+# (inside Safari's toolbar) when asked to click a button in the "top-right
+# header" of a webpage whose real header was at y~115. This prefix gives the
+# model an explicit numeric boundary between browser chrome and webpage content
+# so it stops anchoring webpage elements to the top of the screen.
+_SAFARI_CHROME_PROMPT = (
+    "CONTEXT: You are operating a macOS virtual machine with Safari running at "
+    "1024x768 resolution. Safari's browser chrome occupies the top portion of "
+    "the screen:\n"
+    "  - macOS menu bar: y=0 to y=15\n"
+    "  - Safari tab bar + traffic lights: y=15 to y=35\n"
+    "  - Safari URL bar: y=35 to y=65\n"
+    "  - Safari toolbar bottom edge: y~90\n"
+    "\n"
+    "IMPORTANT: The webpage's own content starts at approximately y=100. "
+    "Webpage headers (with logos, navigation links, and buttons like 'Log in' "
+    "or 'Sign up') live INSIDE the webpage area, typically between y=100 and "
+    "y=160. When a task asks you to click a button in the page header, "
+    "target y>=100 — NEVER click at y<100 unless the task is explicitly about "
+    "Safari itself (e.g. 'type in the URL bar'). Clicking at y<90 will land "
+    "in Safari's own toolbar, not on webpage elements.\n"
+    "\n"
+)
+
 
 # --- Sentinel Exception ---
 
@@ -182,6 +208,11 @@ class TrainingSession:
         self._steps: list[PlaybookStep] = []
         self._computer: Any = None
         self._verifier: ActionVerifier | None = None
+        # Coordinates of the last click CUA emitted inside the most recent
+        # _execute_single_step call. Reset at the start of each step; read
+        # by _execute_and_verify when composing retry feedback so UI-TARS
+        # gets concrete info about what it tried before.
+        self._last_click_xy: tuple[int, int] | None = None
 
     # --- Public API ---
 
@@ -372,26 +403,33 @@ class TrainingSession:
         """
         max_retries = self._max_verify_retries
         last_reasoning: str | None = None
+        last_click_xy: tuple[int, int] | None = None
         last_screenshot: bytes = b""
         last_description: str = ""
 
         for attempt in range(1, max_retries + 1):
             # 1. Execute via CUA (reuses existing retry-on-exception logic).
-            # On retry, thread the verifier's most recent failure reasoning into
-            # the instruction so UI-TARS has a corrective signal.
+            # On retry, thread the verifier's most recent failure reasoning AND
+            # the exact pixel the previous attempt clicked into the instruction
+            # so UI-TARS has a concrete corrective signal.
             if attempt > 1 and last_reasoning:
                 effective_instruction = self._compose_retry_instruction(
-                    instruction, attempt, max_retries, last_reasoning
+                    instruction, attempt, max_retries, last_reasoning, last_click_xy
                 )
                 logger.info(
-                    "Retry attempt %d/%d — augmenting instruction with verifier feedback (%d chars of reasoning)",
+                    "Retry attempt %d/%d — augmenting instruction with verifier feedback "
+                    "(%d chars reasoning, last_click=%s)",
                     attempt,
                     max_retries,
                     len(last_reasoning),
+                    last_click_xy,
                 )
             else:
                 effective_instruction = instruction
             screenshot, description = await self._try_execute_step(effective_instruction)
+            # Capture the click coordinate this attempt emitted (if any) before
+            # the next iteration resets it in _execute_single_step.
+            last_click_xy = self._last_click_xy
             if screenshot is None:
                 return None  # CUA execution failed entirely
             last_screenshot, last_description = screenshot, description
@@ -559,25 +597,37 @@ class TrainingSession:
         attempt: int,
         max_attempts: int,
         last_reasoning: str,
+        last_click_xy: tuple[int, int] | None = None,
     ) -> str:
         """Build a retry instruction that feeds verifier feedback back to UI-TARS.
 
         The original instruction is preserved verbatim and augmented with a
         clearly delimited correction section. Only the MOST RECENT reasoning
         is included — retry context should not grow unboundedly across attempts.
+
+        When ``last_click_xy`` is provided, the exact pixel the previous attempt
+        clicked is included so UI-TARS has concrete data about what didn't work
+        (rather than having to infer "something" went wrong from prose).
         """
+        last_click_line = ""
+        if last_click_xy is not None:
+            lx, ly = last_click_xy
+            last_click_line = (
+                f"Your previous attempt clicked at pixel ({lx}, {ly}) and did NOT produce "
+                f"the expected result. Do not click that same pixel again.\n"
+            )
         return (
             f"{original}\n\n"
             f"IMPORTANT — This is retry attempt {attempt}/{max_attempts}. "
             f"Your previous attempt FAILED verification.\n"
+            f"{last_click_line}"
             f"Verifier feedback on why it failed:\n"
             f"{last_reasoning}\n\n"
             f"Try a DIFFERENT element or screen location this time. "
             f"Do not repeat the same action as your previous attempt."
         )
 
-    @staticmethod
-    def _log_cua_action(item: dict[str, Any]) -> None:
+    def _log_cua_action(self, item: dict[str, Any]) -> None:
         """Emit one INFO log line summarising a CUA ``computer_call`` item.
 
         The CUA SDK shape places the action dict directly under the ``action``
@@ -585,6 +635,10 @@ class TrainingSession:
         are still in VNC-image space; the rescaled screen-logical coordinates
         are logged separately by ``soren.patches.vnc_screenshot``'s click
         wrappers right before dispatch.
+
+        Side effect: when the action is a click variant with (x, y) coords,
+        updates ``self._last_click_xy`` so the retry feedback can include the
+        exact pixel that was tried.
         """
         action = item.get("action")
         if not isinstance(action, dict):
@@ -599,6 +653,14 @@ class TrainingSession:
             extras = {k: v for k, v in action.items() if k not in {"type", "x", "y"}}
             extras_str = f" {extras}" if extras else ""
             logger.info("CUA action: %s x=%s y=%s%s", action_type, x, y, extras_str)
+            # Track click-type actions specifically for retry feedback. Move,
+            # scroll, and drag have coordinates too but aren't what we want to
+            # warn UI-TARS away from on retry.
+            if isinstance(action_type, str) and "click" in action_type:
+                try:
+                    self._last_click_xy = (int(x), int(y))
+                except (TypeError, ValueError):
+                    pass
         else:
             payload = {k: v for k, v in action.items() if k != "type"}
             logger.info("CUA action: %s %s", action_type, payload)
@@ -643,10 +705,14 @@ class TrainingSession:
 
         vlm_model = DEFAULT_VLM_MODEL
 
+        # Fresh step — clear any click coords left over from a prior attempt
+        # so retry feedback only references the CURRENT attempt's click.
+        self._last_click_xy = None
+
         agent = ComputerAgent(
             model=vlm_model,
             tools=[computer],
-            instructions=f"Execute this single action: {instruction}",
+            instructions=f"{_SAFARI_CHROME_PROMPT}Execute this single action: {instruction}",
             screenshot_delay=0.5,
         )
         messages = [{"role": "user", "content": instruction}]
