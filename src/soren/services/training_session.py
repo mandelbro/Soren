@@ -308,18 +308,67 @@ class TrainingSession:
     # --- NAVIGATE ---
 
     async def _navigate(self) -> None:
+        """Navigate the VM's browser to self._source_url via a deterministic
+        keyboard sequence.
+
+        Per ADR-0001, URL navigation is a deterministic step that doesn't
+        need VLM grounding: a real human user focuses the URL bar via
+        Cmd+L, types the URL, and presses Enter. We dispatch exactly that
+        sequence through CUA's keyboard transport, producing real OS input
+        events indistinguishable from a human typing. UI-TARS is not
+        involved in this step — it's the grounding engine for visual
+        targets, not the mandatory router for every action.
+
+        This also sidesteps a known incompatibility with the Safari chrome
+        crop feature (SOREN_CHROME_CROP_Y=100), which hides the URL bar
+        from UI-TARS's view and would otherwise make visual clicking
+        impossible.
+        """
         if self._source_url:
             await self._callbacks.show_message(f"Navigating to {self._source_url}...")
             try:
-                await self._execute_single_step(
-                    f"Navigate to {self._source_url}",
-                    self._computer,
-                )
+                await self._auto_navigate_to_url(self._source_url)
             except Exception as exc:
                 await self._callbacks.show_error(f"Navigation failed: {exc}")
 
         screenshot, description = await self._capture_and_describe()
         await self._callbacks.show_screenshot(screenshot or b"", description)
+
+    async def _auto_navigate_to_url(self, url: str) -> None:
+        """Dispatch Cmd+L -> type URL -> Return via the CUA keyboard transport.
+
+        This method deliberately does NOT go through UI-TARS or any VLM.
+        It is a hardcoded sequence that simulates the keyboard shortcut a
+        real human uses to navigate Safari to a URL. Dispatch happens via
+        the same ``interface.hotkey`` / ``interface.type_text`` /
+        ``interface.press_key`` methods that VLM-planned actions use —
+        the wire signature is identical to a human keystroke because the
+        transport is identical.
+
+        Brief sleeps between steps let the UI render each state before
+        the next input event, producing a more human-like timing rhythm
+        (per ADR-0001 constraint: "realistic typing rhythm, standard
+        hotkeys only").
+        """
+        import asyncio
+
+        interface = self._computer.interface
+        logger.info("Auto-navigate: dispatching Cmd+L -> type %r -> Return", url)
+
+        # Focus the URL bar. Cmd+L is Safari's standard shortcut — every
+        # Safari user has this in motor memory, so it's a valid
+        # deterministic sequence under ADR-0001.
+        await interface.hotkey("cmd", "l")
+        await asyncio.sleep(0.3)  # let Safari render the focused URL bar state
+
+        # Type the URL. CUA's type_text produces one keystroke per character
+        # with its default timing — the result is a realistic typing rhythm
+        # on the wire, not a zero-millisecond paste.
+        await interface.type_text(url)
+        await asyncio.sleep(0.2)
+
+        # Submit
+        await interface.press_key("return")
 
     # --- STEP_LOOP (autonomous verify+retry) ---
 

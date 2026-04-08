@@ -228,3 +228,63 @@ class TestConfigureTrainingLogging:
                 result = runner.invoke(cli, ["train", "run", "test-source", "--debug"])
             assert result.exit_code == 0, result.output
             mock_cfg.assert_called_once_with(debug=True)
+
+
+class TestTrainRunUrlFlag:
+    """--url flag threads into TrainingSession.source_url so _navigate can
+    auto-dispatch Cmd+L + type URL + Return via the keyboard path (ADR-0001).
+    """
+
+    @staticmethod
+    def _patched_session_cls():
+        """Return a MagicMock suitable for patching TrainingSession that
+        yields instances whose .run() returns None asynchronously (simulating
+        an aborted training session so the CLI's ``if result is None`` branch
+        short-circuits before touching downstream code)."""
+        mock_instance = MagicMock()
+        mock_instance.run = AsyncMock(return_value=None)
+        cls = MagicMock(return_value=mock_instance)
+        return cls
+
+    def test_url_flag_threaded_to_session(self, runner):
+        """Running `train run SOURCE --url https://example.com` must construct
+        TrainingSession with source_url set to that URL."""
+        MockSession = self._patched_session_cls()
+        with (
+            patch("soren.cli.train._configure_training_logging"),
+            patch("soren.cli.train.TrainingSession", MockSession),
+            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.LLMService"),
+            patch("soren.cli.train.VMManager"),
+            patch("soren.cli.train.PlaybookService"),
+        ):
+            result = runner.invoke(
+                cli,
+                ["train", "run", "sproutful", "--flow", "login", "--url", "https://sproutful.com"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert MockSession.called, "TrainingSession should be instantiated"
+        ctor_kwargs = MockSession.call_args.kwargs
+        assert ctor_kwargs.get("source_url") == "https://sproutful.com", (
+            f"Expected source_url='https://sproutful.com'; got {ctor_kwargs.get('source_url')!r}"
+        )
+
+    def test_url_flag_absent_defaults_to_empty_string(self, runner):
+        """When --url is omitted, TrainingSession.source_url defaults to ''
+        (the existing behavior — no auto-navigation)."""
+        MockSession = self._patched_session_cls()
+        with (
+            patch("soren.cli.train._configure_training_logging"),
+            patch("soren.cli.train.TrainingSession", MockSession),
+            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.LLMService"),
+            patch("soren.cli.train.VMManager"),
+            patch("soren.cli.train.PlaybookService"),
+        ):
+            result = runner.invoke(cli, ["train", "run", "sproutful", "--flow", "login"])
+
+        assert result.exit_code == 0, result.output
+        assert MockSession.called, "TrainingSession should be instantiated"
+        ctor_kwargs = MockSession.call_args.kwargs
+        assert ctor_kwargs.get("source_url") == "", f"Expected source_url=''; got {ctor_kwargs.get('source_url')!r}"

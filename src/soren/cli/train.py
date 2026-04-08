@@ -190,12 +190,29 @@ def train():
 @click.option("--task-type", default=None, help="Task type (for execution flows)")
 @click.option("--config", type=click.Path(exists=True), default=None, help="Path to settings.yaml")
 @click.option(
+    "--url",
+    default=None,
+    help=(
+        "Source URL to auto-navigate to before training begins. "
+        "When provided, Soren dispatches Cmd+L + type URL + Return via the VM's keyboard, "
+        "bypassing UI-TARS for the navigation step (see ADR-0001). "
+        "Saves a training cycle on a deterministic step and works with the Safari chrome crop feature."
+    ),
+)
+@click.option(
     "--debug",
     is_flag=True,
     default=False,
     help="Emit DEBUG-level logs (otherwise INFO) for soren.* loggers — useful for diagnosing click misses.",
 )
-def train_run(source: str, flow: str | None, task_type: str | None, config: str | None, debug: bool) -> None:
+def train_run(
+    source: str,
+    flow: str | None,
+    task_type: str | None,
+    config: str | None,
+    url: str | None,
+    debug: bool,
+) -> None:
     """Start an interactive training session for SOURCE."""
     _configure_training_logging(debug=debug)
 
@@ -224,6 +241,7 @@ def train_run(source: str, flow: str | None, task_type: str | None, config: str 
                 callbacks=callbacks,
                 source_name=source,
                 flow_type=ft,
+                source_url=url or "",
                 task_type=task_type if ft == "execution" else None,
                 verification_model=settings.verification.model,
             )

@@ -224,6 +224,144 @@ class TestAutoVerifyFailRetries:
         cb.show_message.assert_any_call("Verification failed. Auto-retrying (1/3)...")
 
 
+class TestAutoNavigateViaKeyboard:
+    """Auto-URL-navigate policy (ADR-0001): when source_url is set, the
+    NAVIGATE state dispatches Cmd+L + type_text(url) + Return via CUA's
+    keyboard transport instead of asking UI-TARS to visually click the
+    URL bar. Saves a training cycle on a deterministic step and works
+    when the Safari chrome crop is enabled.
+    """
+
+    async def test_navigate_dispatches_cmd_l_then_type_then_return(self) -> None:
+        """The navigation helper must fire hotkey('cmd','l'), type_text(url), press_key('return')."""
+        cb = _mock_callbacks(get_instruction_with_expected=AsyncMock(return_value=("/done", "")))
+
+        vm = _mock_vm()
+        computer = AsyncMock()
+        computer.interface = AsyncMock()
+        # Track call order across all three keyboard methods
+        call_order: list[str] = []
+
+        async def record_hotkey(*keys, delay=None):  # noqa: ARG001
+            call_order.append(f"hotkey:{'+'.join(keys)}")
+
+        async def record_type_text(text, delay=None):  # noqa: ARG001
+            call_order.append(f"type_text:{text}")
+
+        async def record_press_key(key, delay=None):  # noqa: ARG001
+            call_order.append(f"press_key:{key}")
+
+        computer.interface.hotkey = AsyncMock(side_effect=record_hotkey)
+        computer.interface.type_text = AsyncMock(side_effect=record_type_text)
+        computer.interface.press_key = AsyncMock(side_effect=record_press_key)
+        computer.interface.screenshot = AsyncMock(return_value=b"fake-screenshot")
+        vm.connect_computer = AsyncMock(return_value=computer)
+
+        session = TrainingSession(
+            vm_manager=vm,
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="sproutful",
+            flow_type="login",
+            source_url="https://sproutful.com",
+        )
+
+        with patch(_PATCH_APPLY_ALL), patch(_PATCH_CUA_AGENT):
+            await session.run()
+
+        # Must see these three calls in this exact order
+        assert "hotkey:cmd+l" in call_order, f"Expected hotkey:cmd+l in {call_order}"
+        assert "type_text:https://sproutful.com" in call_order, f"Expected type_text in {call_order}"
+        assert "press_key:return" in call_order, f"Expected press_key:return in {call_order}"
+
+        hotkey_idx = call_order.index("hotkey:cmd+l")
+        type_idx = call_order.index("type_text:https://sproutful.com")
+        return_idx = call_order.index("press_key:return")
+        assert hotkey_idx < type_idx < return_idx, (
+            f"Expected Cmd+L -> type URL -> Return in that order; got {call_order}"
+        )
+
+    async def test_navigate_bypasses_ui_tars_when_url_set(self) -> None:
+        """When source_url is set, _navigate must NOT invoke _execute_single_step.
+
+        The whole point of ADR-0001's training-mode policy is to avoid
+        wasting a VLM cycle on a deterministic URL navigation. If this test
+        fails, we're still routing through UI-TARS and the feature is broken.
+        """
+        cb = _mock_callbacks(get_instruction_with_expected=AsyncMock(return_value=("/done", "")))
+
+        vm = _mock_vm()
+        computer = AsyncMock()
+        computer.interface = AsyncMock()
+        computer.interface.hotkey = AsyncMock()
+        computer.interface.type_text = AsyncMock()
+        computer.interface.press_key = AsyncMock()
+        computer.interface.screenshot = AsyncMock(return_value=b"fake-screenshot")
+        vm.connect_computer = AsyncMock(return_value=computer)
+
+        session = TrainingSession(
+            vm_manager=vm,
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="sproutful",
+            flow_type="login",
+            source_url="https://sproutful.com",
+        )
+
+        with (
+            patch(_PATCH_APPLY_ALL),
+            patch(_PATCH_CUA_AGENT) as MockAgent,
+            patch.object(session, "_execute_single_step", wraps=session._execute_single_step) as mock_step,
+        ):
+            await session.run()
+
+        # _execute_single_step may be called zero times (only login flow with /done).
+        # Critically, it must NOT have been called for the navigation step.
+        nav_calls = [
+            call
+            for call in mock_step.call_args_list
+            if call.args and isinstance(call.args[0], str) and "sproutful.com" in call.args[0]
+        ]
+        assert not nav_calls, f"Navigation must not route through UI-TARS / _execute_single_step; got {nav_calls}"
+        # ComputerAgent must not have been constructed for navigation either
+        assert MockAgent.call_count == 0, (
+            f"No ComputerAgent should be created for navigation; got {MockAgent.call_count} calls"
+        )
+
+    async def test_no_navigation_when_url_empty(self) -> None:
+        """If source_url is empty string (default), no keyboard dispatch happens."""
+        cb = _mock_callbacks(get_instruction_with_expected=AsyncMock(return_value=("/done", "")))
+
+        vm = _mock_vm()
+        computer = AsyncMock()
+        computer.interface = AsyncMock()
+        computer.interface.hotkey = AsyncMock()
+        computer.interface.type_text = AsyncMock()
+        computer.interface.press_key = AsyncMock()
+        computer.interface.screenshot = AsyncMock(return_value=b"fake-screenshot")
+        vm.connect_computer = AsyncMock(return_value=computer)
+
+        session = TrainingSession(
+            vm_manager=vm,
+            playbook_service=_mock_playbook_service(),
+            llm=_mock_llm(),
+            callbacks=cb,
+            source_name="sproutful",
+            flow_type="login",
+            # source_url omitted — default ""
+        )
+
+        with patch(_PATCH_APPLY_ALL), patch(_PATCH_CUA_AGENT):
+            await session.run()
+
+        computer.interface.hotkey.assert_not_called()
+        computer.interface.type_text.assert_not_called()
+        # press_key may be called by other paths (e.g. enter-key patch test setup),
+        # but hotkey and type_text are specific to the nav path.
+
+
 class TestRetryInstructionIncludesVerifierFeedback:
     """Regression test: retries must feed the verifier's failure reasoning back
     to UI-TARS so the model has a signal to pick a different element.
