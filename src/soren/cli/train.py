@@ -35,6 +35,14 @@ _TRAINING_LOGGERS = (
     "soren.verification.verifier",
 )
 
+# Third-party loggers that emit WARNINGs on every ComputerAgent construction
+# for optional integrations Soren does not use. Silence them so the actually-
+# useful output above is not drowned in "X not installed" noise.
+_SILENCED_NOISY_LOGGERS = (
+    "core.telemetry.sentry",
+    "core.telemetry.otel",
+)
+
 
 _TRAINING_HANDLER_MARKER = "_soren_training_handler"
 
@@ -46,6 +54,10 @@ def _configure_training_logging(debug: bool) -> None:
     are emitted at INFO/DEBUG and never reach the operator. We attach a single
     Rich-friendly StreamHandler so the output interleaves cleanly with the Rich
     panels printed by ``RichTrainingCallbacks``.
+
+    Also silences ``core.telemetry.sentry`` / ``core.telemetry.otel`` loggers
+    (raised to ERROR) so their WARNING-level "not installed" messages stop
+    drowning the training output on every ComputerAgent construction.
     """
     level = logging.DEBUG if debug else logging.INFO
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -61,6 +73,9 @@ def _configure_training_logging(debug: bool) -> None:
         handler.setLevel(level)
         setattr(handler, _TRAINING_HANDLER_MARKER, True)
         lg.addHandler(handler)
+
+    for name in _SILENCED_NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.ERROR)
 
 
 # Staleness thresholds per discovery document

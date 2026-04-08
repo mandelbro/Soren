@@ -193,6 +193,16 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     _orig_double_click = interface.double_click
     _orig_move_cursor = getattr(interface, "move_cursor", None)
 
+    if _orig_move_cursor is None:
+        logger.warning(
+            "Cursor warp disabled: interface has no move_cursor method "
+            "(type=%s). Clicks will still dispatch but the cursor will not "
+            "visibly move on the VM.",
+            type(interface).__name__,
+        )
+    else:
+        logger.info("Cursor warp enabled (interface=%s)", type(interface).__name__)
+
     def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
         """Scale (x, y) from VNC-image space to screen-logical space."""
         sx = round(x * _coord_scale["x"]) if x is not None else x
@@ -204,15 +214,23 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
         Makes click targets visible on the Screen Sharing window so the operator
         can immediately see whether the model is aiming at the right element.
-        Silently no-ops when ``move_cursor`` is unavailable on the interface.
+        Failures are logged at WARNING so silent ``move_cursor`` regressions (VM
+        side unsupported, transport error, etc.) are surfaced instead of hidden.
         """
         if _orig_move_cursor is None or sx is None or sy is None:
             return
         delay = _cursor_warp_delay()
+        logger.info("Cursor warp -> (%s, %s), delay=%.2fs", sx, sy, delay)
         try:
             await _orig_move_cursor(sx, sy)
-        except Exception:
-            logger.debug("Cursor warp failed at (%s, %s); proceeding with click", sx, sy, exc_info=True)
+        except Exception as exc:
+            logger.warning(
+                "Cursor warp failed at (%s, %s): %s: %s",
+                sx,
+                sy,
+                type(exc).__name__,
+                exc,
+            )
             return
         if delay > 0:
             import asyncio

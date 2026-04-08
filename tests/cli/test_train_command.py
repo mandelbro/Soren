@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from soren.cli import cli
-from soren.cli.train import _TRAINING_LOGGERS, _configure_training_logging
+from soren.cli.train import _SILENCED_NOISY_LOGGERS, _TRAINING_LOGGERS, _configure_training_logging
 
 
 @pytest.fixture
@@ -173,6 +173,8 @@ class TestConfigureTrainingLogging:
             lg.handlers = [h for h in lg.handlers if not getattr(h, "_soren_training_handler", False)]
             lg.setLevel(logging.NOTSET)
             lg.propagate = True
+        for name in _SILENCED_NOISY_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
 
     def test_default_promotes_loggers_to_info(self):
         self._reset_loggers()
@@ -202,6 +204,16 @@ class TestConfigureTrainingLogging:
                 lg = logging.getLogger(name)
                 marked = [h for h in lg.handlers if getattr(h, "_soren_training_handler", False)]
                 assert len(marked) == 1, f"{name} has {len(marked)} training handlers, expected 1"
+        finally:
+            self._reset_loggers()
+
+    def test_noisy_third_party_loggers_raised_to_error(self):
+        """core.telemetry.{sentry,otel} WARNING spam must be silenced during training."""
+        self._reset_loggers()
+        try:
+            _configure_training_logging(debug=False)
+            for name in _SILENCED_NOISY_LOGGERS:
+                assert logging.getLogger(name).level == logging.ERROR, f"{name} should be at ERROR"
         finally:
             self._reset_loggers()
 

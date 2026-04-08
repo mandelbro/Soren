@@ -453,6 +453,84 @@ class TestCursorWarpObservability:
 
         orig_left.assert_awaited_once_with(100, 200)
 
+    @pytest.mark.asyncio
+    async def test_warp_failure_logged_at_warning(self, caplog):
+        """A move_cursor exception must surface at WARNING, not be swallowed at DEBUG.
+
+        Regression guard against silent-failure anti-pattern: the first attempt
+        at this patch logged warp failures at DEBUG, which meant the training
+        run log gave no hint that move_cursor was broken on the VM side.
+        """
+        import io
+        import logging
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        # Hold the original AsyncMock ref because patch_computer_screenshot
+        # wraps left_click in a scaled/warped closure.
+        orig_left_click = AsyncMock()
+
+        computer = MagicMock()
+        interface = MagicMock()
+        interface.left_click = orig_left_click
+        interface.move_cursor = AsyncMock(side_effect=RuntimeError("VM rejected move_cursor"))
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        with (
+            caplog.at_level(logging.WARNING, logger="soren.patches.vnc_screenshot"),
+            patch(
+                "soren.patches.vnc_screenshot._capture_vnc_screenshot",
+                return_value=png_bytes,
+            ),
+        ):
+            await interface.screenshot()
+            await interface.left_click(500, 300)
+
+        warnings = [
+            r for r in caplog.records if r.levelno >= logging.WARNING and "Cursor warp failed" in r.getMessage()
+        ]
+        assert warnings, f"Expected WARNING 'Cursor warp failed' log; got {[r.getMessage() for r in caplog.records]}"
+        assert "VM rejected move_cursor" in warnings[0].getMessage()
+        # Click must still dispatch even when warp fails
+        orig_left_click.assert_awaited_once_with(500, 300)
+
+    @pytest.mark.asyncio
+    async def test_missing_move_cursor_logged_at_warning(self, caplog):
+        """When the interface has no move_cursor at patch time, emit a WARNING at patch time.
+
+        This turns a silent cursor-warp no-op into a visible signal in the
+        training log: if the user re-runs and doesn't see any "Cursor warp
+        enabled" line, they know the warp was never wired up.
+        """
+        import logging
+
+        computer = MagicMock(spec=["interface"])
+        interface = MagicMock(spec=["screenshot", "left_click", "right_click", "double_click", "get_screen_size"])
+        interface.left_click = AsyncMock()
+        interface.get_screen_size = AsyncMock(return_value={"width": 1920, "height": 1080})
+        computer.interface = interface
+
+        lume_client = AsyncMock()
+        lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
+
+        with caplog.at_level(logging.WARNING, logger="soren.patches.vnc_screenshot"):
+            patch_computer_screenshot(computer, lume_client, "test-vm")
+
+        warnings = [
+            r for r in caplog.records if r.levelno >= logging.WARNING and "Cursor warp disabled" in r.getMessage()
+        ]
+        assert warnings, f"Expected WARNING 'Cursor warp disabled' log; got {[r.getMessage() for r in caplog.records]}"
+
 
 class TestConnectComputer:
     @pytest.mark.asyncio
