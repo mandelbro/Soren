@@ -61,21 +61,25 @@ vm-reset:
     uv run soren vm reset
 
 # Recover from stale virtualization locks and start VM.
+# Uses lsof -t (PIDs only): macOS lsof truncates COMMAND to "com.apple", so filtering on
+# "Virtualization.VirtualMachine" never matched and stale helpers kept nvram.bin open
+# ("Failed to lock auxiliary storage" from VZMacAuxiliaryStorage).
 # Usage: just vm-recover [VM_NAME] (default: soren-vm)
 vm-recover VM='soren-vm':
     @echo "Recovering VM '{{VM}}' from stale locks..."
     @lume stop {{VM}} --force >/dev/null 2>&1 || true
-    @pids=$$(lsof -nP +D "$$HOME/.lume/{{VM}}" 2>/dev/null | awk '/com.apple.Virtualization.VirtualMachine/ {print $$2}' | sort -u); \
-      if [ -n "$$pids" ]; then \
-        echo "Found stale virtualization process(es): $$pids"; \
-        kill -TERM $$pids >/dev/null 2>&1 || true; \
+    @pids=$(lsof -t -nP +D "$HOME/.lume/{{VM}}" 2>/dev/null | sort -u); \
+      if [ -n "$pids" ]; then \
+        echo "Found process(es) holding VM files: $pids"; \
+        kill -TERM $pids >/dev/null 2>&1 || true; \
         sleep 1; \
-        alive=$$(ps -o pid= -p $$pids 2>/dev/null | awk '{print $$1}'); \
-        if [ -n "$$alive" ]; then \
-          echo "Force killing remaining process(es): $$alive"; \
-          kill -KILL $$alive >/dev/null 2>&1 || true; \
+        alive=$(ps -o pid= -p $pids 2>/dev/null | awk '{print $1}'); \
+        if [ -n "$alive" ]; then \
+          echo "Force killing remaining process(es): $alive"; \
+          kill -KILL $alive >/dev/null 2>&1 || true; \
         fi; \
       fi
+    @sleep 2
     @echo "Starting VM '{{VM}}'..."
     lume run {{VM}}
 
