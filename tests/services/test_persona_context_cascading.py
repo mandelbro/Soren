@@ -1,4 +1,4 @@
-"""Tests for PersonaContext cascading playbook integration (Task 009)."""
+"""Tests for PersonaContext cascading playbook integration."""
 
 from __future__ import annotations
 

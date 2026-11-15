@@ -1,4 +1,4 @@
-"""Train command group — interactive training and playbook management (Tasks 016-017).
+"""Train command group — interactive training and playbook management.
 
 Provides ``soren train run <source>`` for interactive training sessions and
 ``soren train list/show/delete`` for playbook management.

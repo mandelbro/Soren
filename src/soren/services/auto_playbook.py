@@ -1,4 +1,4 @@
-"""Auto-playbook generation from successful execution step logs (Task 012).
+"""Auto-playbook generation from successful execution step logs.
 
 Converts step logs into structured FlowPlaybook and HostPlaybook objects via
 LLM summarization. Extends the existing PlaybookService.write_back() pattern

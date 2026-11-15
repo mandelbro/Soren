@@ -1,4 +1,4 @@
-"""Tests for host playbook integration and auto-learning (Task 020)."""
+"""Tests for host playbook integration and auto-learning."""
 
 from __future__ import annotations
 

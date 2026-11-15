@@ -1,4 +1,4 @@
-"""TrainingSession — autonomous training orchestrator with verify+retry (Task 014).
+"""TrainingSession — autonomous training orchestrator with verify+retry.
 
 Implements the training loop state machine from discovery document Section 10.6:
 INIT -> PREREQ_REPLAY -> NAVIGATE -> STEP_LOOP -> FINALIZING -> SAVING -> DONE.

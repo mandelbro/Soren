@@ -1,4 +1,4 @@
-"""Tests for stuck intervention prompt during cycle run (Task 021).
+"""Tests for stuck intervention prompt during cycle run.
 
 Verifies the InterventionCallbacks protocol and dispatch logic:
 - Attended mode prompts user when stuck

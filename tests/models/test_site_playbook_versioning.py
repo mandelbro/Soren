@@ -1,4 +1,4 @@
-"""Tests for site playbook schema versioning infrastructure (Task 003)."""
+"""Tests for site playbook schema versioning infrastructure."""
 
 import pytest
 import yaml

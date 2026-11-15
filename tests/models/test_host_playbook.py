@@ -1,4 +1,4 @@
-"""Tests for HostPlaybook and BasePlaybook models (Task 004)."""
+"""Tests for HostPlaybook and BasePlaybook models."""
 
 import pytest
 from pydantic import ValidationError

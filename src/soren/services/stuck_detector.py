@@ -1,4 +1,4 @@
-"""StuckDetector — monitors CUA agent execution for stuck conditions (Task 010).
+"""StuckDetector — monitors CUA agent execution for stuck conditions.
 
 Detects three stuck conditions per discovery document Section 5:
 1. Same screenshot repeated N times (byte equality + histogram similarity fallback)

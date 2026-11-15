@@ -304,7 +304,7 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
-                # Auto-generate host playbook for new domains (Task 020)
+                # Auto-generate host playbook for new domains
                 if self._playbook_service and task_result.step_log:
                     try:
                         host_domain = self._extract_host_domain(task_result.step_log)
@@ -332,7 +332,7 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
-                # Update host confidence on success (Task 020)
+                # Update host confidence on success
                 if self._playbook_service and task_result.step_log:
                     host_domain = self._extract_host_domain(task_result.step_log)
                     if host_domain:
@@ -377,7 +377,7 @@ class SorenMetaAgent:
                     except Exception:
                         pass
 
-                # Update host confidence on failure (Task 020)
+                # Update host confidence on failure
                 if self._playbook_service and task_result and task_result.step_log:
                     host_domain = self._extract_host_domain(task_result.step_log)
                     if host_domain:
@@ -386,7 +386,7 @@ class SorenMetaAgent:
                         except Exception:
                             pass
 
-            # 7. Stuck intervention (Task 021 + Task 023)
+            # 7. Stuck intervention
             if should_offer_training:
                 report.stuck_detected = True
                 stuck_reason = (task_result.error if task_result else None) or "Unknown stuck condition"

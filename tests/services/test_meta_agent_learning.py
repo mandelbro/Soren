@@ -1,4 +1,4 @@
-"""Tests for auto-playbook generation and confidence tracking wired into SorenMetaAgent (Task 013)."""
+"""Tests for auto-playbook generation and confidence tracking wired into SorenMetaAgent."""
 
 from __future__ import annotations
 

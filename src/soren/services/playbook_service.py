@@ -100,7 +100,7 @@ class PlaybookService:
         self._host_dir.mkdir(parents=True, exist_ok=True)
         self._base_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # --- YAML Site Playbook CRUD (Task 006) ---
+    # --- YAML Site Playbook CRUD ---
 
     def load_site(self, source_name: str) -> SitePlaybook | None:
         """Load a site playbook from YAML. Returns None if not found."""
@@ -195,7 +195,7 @@ class PlaybookService:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         return BasePlaybook.model_validate(raw)
 
-    # --- Cascading Resolution (Task 007) ---
+    # --- Cascading Resolution ---
 
     def resolve(
         self,
@@ -272,7 +272,7 @@ class PlaybookService:
             return None
         return format_base_content(base.patterns)
 
-    # --- Prompt Formatting (Task 007) ---
+    # --- Prompt Formatting ---
 
     def to_prompt_instructions(
         self,
@@ -283,7 +283,7 @@ class PlaybookService:
         """Convert FlowPlaybook steps to numbered imperative instructions for CUA agent."""
         return flow_to_prompt_instructions(flow, flow_type, credentials)
 
-    # --- Confidence Tracking (Task 007) ---
+    # --- Confidence Tracking ---
 
     def update_confidence(
         self,

@@ -1,4 +1,4 @@
-"""Tests for unattended mode auto-skip with configurable timeout (Task 023).
+"""Tests for unattended mode auto-skip with configurable timeout.
 
 Verifies the auto-skip behavior when running in unattended mode:
 - Stuck sources auto-skipped after timeout

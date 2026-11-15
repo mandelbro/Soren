@@ -1,4 +1,4 @@
-"""Tests for SitePlaybook Pydantic models (Task 002)."""
+"""Tests for SitePlaybook Pydantic models."""
 
 from datetime import UTC, datetime
 

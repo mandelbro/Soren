@@ -1,4 +1,4 @@
-"""Tests for PlaybookService YAML CRUD methods (Task 006)."""
+"""Tests for PlaybookService YAML CRUD methods."""
 
 from __future__ import annotations
 

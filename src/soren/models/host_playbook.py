@@ -1,4 +1,4 @@
-"""Host and base playbook Pydantic models (Task 004).
+"""Host and base playbook Pydantic models.
 
 HostPlaybook: host-specific navigation patterns (e.g., qualtrics.com quirks).
 BasePlaybook: generic task-type patterns (e.g., survey.yaml structure).

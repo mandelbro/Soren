@@ -1,4 +1,4 @@
-"""Tests for PlaybooksConfig extensions (Task 005)."""
+"""Tests for PlaybooksConfig extensions."""
 
 from soren.models.playbooks import PlaybooksConfig
 
