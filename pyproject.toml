@@ -10,6 +10,8 @@ dependencies = [
     "cua-agent[uitars-mlx]>=0.8.4,<0.9",
     "ollama>=0.6.3",
     "mlx-vlm>=0.7.12,<0.8",
+    # Linux mlx wheels ship without a backend; the CPU one lets tests import mlx in Linux sandboxes/CI.
+    "mlx[cpu]; sys_platform == 'linux'",
     "pydantic>=2.14",
     "cryptography>=50.0",
     "pyyaml>=6.0",
@@ -29,7 +31,7 @@ dev = [
     "pytest-asyncio>=1.5",
     "ruff>=0.17.5",
     "pytest-cov>=7.1",
-    "pyright>=1.1.414",
+    "pyright[nodejs]>=1.1.414",
     "pre-commit>=4.7",
 ]
 
