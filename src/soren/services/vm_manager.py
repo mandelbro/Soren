@@ -9,7 +9,7 @@ from typing import Any
 
 from soren.models.reset import ResetResult, SessionPrepResult
 from soren.models.vm import VMConfig
-from soren.services.lume_client import LumeClient, LumeConnectionError
+from soren.services.lume_client import LumeAPIError, LumeClient, LumeConnectionError
 from soren.services.reset_verification import verify_reset
 
 logger = logging.getLogger(__name__)
@@ -439,8 +439,13 @@ end tell
 
     async def recreate_vm(self, timeout_s: int = 120) -> None:
         """Stop active VM, delete, clone from pristine, start, wait for ready, re-patch VNC."""
-        # Stop active VM
-        await self._client.stop_vm(self._vm_name)
+        # Force-stop: the VM is deleted next, so the graceful shutdown wait buys nothing.
+        try:
+            await self._client.stop_vm(self._vm_name, force=True)
+        except LumeAPIError as e:
+            if "not running" not in e.message.lower():
+                raise
+            logger.info("VM %s already stopped before recreation", self._vm_name)
         self._computer = None
         await asyncio.sleep(2)
 

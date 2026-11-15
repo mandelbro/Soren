@@ -22,7 +22,7 @@ def discover_refresh(persona, config):
     from soren.adapters import get_adapter
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
-    from soren.services.lume_client import LumeConnectionError
+    from soren.services.lume_client import LumeError
     from soren.services.persona_loader import get_personas_dir, load_all
     from soren.services.task_backlog import TaskBacklog, get_default_db_path
     from soren.services.task_discovery import TaskDiscovery
@@ -51,7 +51,7 @@ def discover_refresh(persona, config):
         try:
             await vm.ensure_ready()
             computer = await vm.connect_computer()
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
 

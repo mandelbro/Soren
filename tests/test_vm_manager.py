@@ -260,6 +260,50 @@ def test_cli_vm_status_displays_formatted_output():
     assert "soren-vm" in result.output or "Lume VMs" in result.output
 
 
+def test_cli_vm_status_shows_memory_from_lume_memory_size():
+    """Lume 0.7 reports memory as ``memorySize`` in bytes (shown in GB) and null vncUrl when stopped."""
+    from click.testing import CliRunner
+
+    from soren.cli import cli
+
+    with (
+        patch("soren.cli.vm.load_settings") as load,
+        patch(
+            "soren.services.vm_manager.LumeClient._request",
+            new_callable=AsyncMock,
+            return_value=[{"name": "soren-vm", "status": "stopped", "memorySize": 8 * 1024**3, "vncUrl": None}],
+        ),
+    ):
+        load.return_value.vm = VMConfig()
+        result = CliRunner().invoke(cli, ["vm", "status"])
+
+    assert result.exit_code == 0
+    assert "8 GB" in result.output
+    assert "None" not in result.output  # stopped VMs report vncUrl as null
+
+
+def test_cli_vm_status_reports_lume_api_errors_cleanly():
+    """An HTTP error from Lume exits 1 with Lume's message instead of a traceback."""
+    from click.testing import CliRunner
+
+    from soren.cli import cli
+    from soren.services.lume_client import LumeAPIError
+
+    with (
+        patch("soren.cli.vm.load_settings") as load,
+        patch(
+            "soren.services.vm_manager.LumeClient._request",
+            new_callable=AsyncMock,
+            side_effect=LumeAPIError(500, "storage location unavailable"),
+        ),
+    ):
+        load.return_value.vm = VMConfig()
+        result = CliRunner().invoke(cli, ["vm", "status"])
+
+    assert result.exit_code == 1
+    assert "storage location unavailable" in result.output
+
+
 def test_cli_vm_stop_sends_request():
     """CLI vm stop sends stop request (mock Lume API)."""
     from click.testing import CliRunner

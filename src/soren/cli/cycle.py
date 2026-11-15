@@ -63,7 +63,7 @@ def cycle_run(config, dry_run, unattended):
     from soren.services.config_loader import load_settings
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
-    from soren.services.lume_client import LumeConnectionError
+    from soren.services.lume_client import LumeError
     from soren.services.meta_agent import SorenMetaAgent
     from soren.services.persona_loader import get_personas_dir, load_all
     from soren.services.playbook_service import PlaybookService
@@ -129,7 +129,7 @@ def cycle_run(config, dry_run, unattended):
                         f"[yellow]Source {mode}: {src.get('source_name')} ({src.get('stuck_reason')})[/yellow]"
                     )
             click.echo("Cycle complete.")
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
         finally:

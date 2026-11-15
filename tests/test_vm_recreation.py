@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soren.models.vm import VMConfig
+from soren.services.lume_client import LumeAPIError
 from soren.services.vm_manager import VMManager
 
 # --- recreate_vm tests ---
@@ -42,6 +43,74 @@ async def test_recreate_vm_calls_stop_delete_clone_start():
     assert any("stop" in p for p in paths)
     assert any("clone" in p for p in paths)
     assert any("run" in p for p in paths)
+
+
+def _recreate_patches(manager: VMManager, request_side_effect):
+    """Stub everything after the Lume calls so only the stop/delete/clone/run sequence runs."""
+    return (
+        patch.object(manager._client, "_request", new_callable=AsyncMock, side_effect=request_side_effect),
+        patch.object(manager, "_wait_for_ready", new_callable=AsyncMock),
+        patch.object(manager, "connect_computer", new_callable=AsyncMock),
+        patch.object(manager, "prepare_session_environment", new_callable=AsyncMock),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    )
+
+
+@pytest.mark.asyncio
+async def test_recreate_vm_force_stops_the_vm_it_is_about_to_delete():
+    """The VM is deleted right after stopping, so the graceful 10s shutdown wait is skipped."""
+    manager = VMManager(VMConfig(name="soren-vm", pristine_name="soren-pristine"))
+    stop_bodies = []
+
+    async def track(method, path, *args, json=None, **kwargs):
+        if path.endswith("/stop"):
+            stop_bodies.append(json)
+        return {}
+
+    p1, p2, p3, p4, p5 = _recreate_patches(manager, track)
+    with p1, p2, p3, p4, p5:
+        await manager.recreate_vm(timeout_s=5)
+
+    assert stop_bodies == [{"force": True}]
+
+
+@pytest.mark.asyncio
+async def test_recreate_vm_continues_when_vm_is_already_stopped():
+    """Lume answers 400 'Virtual machine not running' for a stopped VM; recreation still proceeds."""
+    manager = VMManager(VMConfig(name="soren-vm", pristine_name="soren-pristine"))
+    calls = []
+
+    async def track(method, path, *args, **kwargs):
+        calls.append(path)
+        if path.endswith("/stop"):
+            raise LumeAPIError(400, "Virtual machine not running: soren-vm")
+        return {}
+
+    p1, p2, p3, p4, p5 = _recreate_patches(manager, track)
+    with p1, p2, p3, p4, p5:
+        await manager.recreate_vm(timeout_s=5)
+
+    assert any(p.endswith("/clone") for p in calls)
+    assert any(p.endswith("/run") for p in calls)
+
+
+@pytest.mark.asyncio
+async def test_recreate_vm_propagates_other_stop_errors():
+    """Any other stop failure aborts recreation before the VM is deleted."""
+    manager = VMManager(VMConfig(name="soren-vm", pristine_name="soren-pristine"))
+    calls = []
+
+    async def track(method, path, *args, **kwargs):
+        calls.append((method, path))
+        if path.endswith("/stop"):
+            raise LumeAPIError(400, "VM lock is held by another process")
+        return {}
+
+    p1, p2, p3, p4, p5 = _recreate_patches(manager, track)
+    with p1, p2, p3, p4, p5, pytest.raises(LumeAPIError):
+        await manager.recreate_vm(timeout_s=5)
+
+    assert not any(method == "DELETE" for method, _ in calls)
 
 
 @pytest.mark.asyncio
