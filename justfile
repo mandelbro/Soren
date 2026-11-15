@@ -80,8 +80,8 @@ vm-recover VM='soren-vm':
         fi; \
       fi
     @sleep 2
-    @echo "Starting VM '{{VM}}'..."
-    lume run {{VM}}
+    @echo "Starting VM '{{VM}}' in the background (VNC stays enabled)..."
+    lume run {{VM}} --detach --display none
 
 # Credential management
 encrypt-credentials:

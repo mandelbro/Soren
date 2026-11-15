@@ -61,9 +61,7 @@ class ValidationReport:
         detail: str = "",
         informational: bool = False,
     ) -> None:
-        self.checks.append(
-            CheckResult(name=name, passed=passed, detail=detail, informational=informational)
-        )
+        self.checks.append(CheckResult(name=name, passed=passed, detail=detail, informational=informational))
 
     def print_summary(self) -> None:
         print(f"\n{'=' * 60}")
@@ -125,6 +123,7 @@ tell application "Safari"
 end tell
 """
 
+
 def osascript_open_new_window_with_url(url: str) -> str:
     """Build AppleScript to open a new Safari window with the given URL."""
     escaped = url.replace("\\", "\\\\").replace('"', '\\"')
@@ -162,17 +161,13 @@ async def main(vm_name: str, lume_url: str) -> None:
             # Step 1: Open Safari and create multiple windows (simulate in-progress task)
             # ----------------------------------------------------------
             print("[POC] Step 1: Opening Safari and creating multiple windows...")
-            await iface.run_command(
-                'open -a Safari "https://httpbin.org/cookies/set/session_token/abc123"'
-            )
+            await iface.run_command('open -a Safari "https://httpbin.org/cookies/set/session_token/abc123"')
             await asyncio.sleep(5)
 
             # Open a second window via AppleScript (open -a Safari opens tabs, not windows)
             await run_osascript(
                 iface,
-                osascript_open_new_window_with_url(
-                    "https://httpbin.org/cookies/set/remember_me/true"
-                ),
+                osascript_open_new_window_with_url("https://httpbin.org/cookies/set/remember_me/true"),
             )
             await asyncio.sleep(3)
 
@@ -180,9 +175,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             # Step 2: Verify session state and multiple windows
             # ----------------------------------------------------------
             print("[POC] Step 2: Verifying session state is established...")
-            cookie_result = await iface.run_command(
-                "ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1"
-            )
+            cookie_result = await iface.run_command("ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1")
             cookies_exist = "No such file" not in cookie_result.stdout
             report.add(
                 "Cookies set after navigation",
@@ -228,9 +221,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             # Step 4: Verify cookies are PRESERVED (informational; env-dependent)
             # ----------------------------------------------------------
             print("[POC] Step 4: Verifying cookies are PRESERVED after reset...")
-            cookie_result = await iface.run_command(
-                "ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1"
-            )
+            cookie_result = await iface.run_command("ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1")
             cookies_preserved = "No such file" not in cookie_result.stdout
             report.add(
                 "Cookies PRESERVED after window reset",
@@ -244,9 +235,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             # Step 5: Verify localStorage is PRESERVED
             # ----------------------------------------------------------
             print("[POC] Step 5: Verifying localStorage directory is PRESERVED...")
-            ls_result = await iface.run_command(
-                "ls ~/Library/Safari/ 2>&1"
-            )
+            ls_result = await iface.run_command("ls ~/Library/Safari/ 2>&1")
             safari_dir_exists = "No such file" not in ls_result.stdout
             report.add(
                 "Safari data directory PRESERVED",
@@ -291,9 +280,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             # Step 7: Verify cookies still work (session alive)
             # ----------------------------------------------------------
             print("[POC] Step 7: Navigating to verify cookies are still sent...")
-            await iface.run_command(
-                'open -a Safari "https://httpbin.org/cookies"'
-            )
+            await iface.run_command('open -a Safari "https://httpbin.org/cookies"')
             await asyncio.sleep(5)
 
             # Take a screenshot for manual verification (via interface, returns bytes)
@@ -321,9 +308,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             print("[POC] Step 8: Running 3 rapid reset cycles for stability...")
             stability_ok = True
             for i in range(3):
-                await iface.run_command(
-                    f'open -a Safari "https://httpbin.org/get?cycle={i}"'
-                )
+                await iface.run_command(f'open -a Safari "https://httpbin.org/get?cycle={i}"')
                 await asyncio.sleep(2)
                 await run_osascript(iface, OSASCRIPT_CLOSE_WINDOWS)
                 await asyncio.sleep(1)
@@ -341,9 +326,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             print(f"  Stability: {'OK' if stability_ok else 'FAILED'}")
 
             # Final: verify cookies survived the stability test (informational; env-dependent)
-            cookie_result = await iface.run_command(
-                "ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1"
-            )
+            cookie_result = await iface.run_command("ls -la ~/Library/Cookies/Cookies.binarycookies 2>&1")
             cookies_survived = "No such file" not in cookie_result.stdout
             report.add(
                 "Cookies survived stability cycles",
@@ -386,7 +369,7 @@ async def main(vm_name: str, lume_url: str) -> None:
 
         try:
             subprocess.run(
-                ["lume", "stop", vm_name],
+                ["lume", "stop", vm_name, "--force"],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -398,7 +381,7 @@ async def main(vm_name: str, lume_url: str) -> None:
                 timeout=60,
             )
             clone_result = subprocess.run(
-                ["lume", "clone", vm_name, pristine_name],
+                ["lume", "clone", pristine_name, vm_name],
                 capture_output=True,
                 text=True,
                 timeout=300,
@@ -418,7 +401,7 @@ async def main(vm_name: str, lume_url: str) -> None:
             print(f"  Clone failed: {e}")
     else:
         print(f"  Skipped: no pristine VM '{pristine_name}' found in lume ls")
-        print(f"  To enable this test, create a pristine VM:")
+        print("  To enable this test, create a pristine VM:")
         print(f"    lume clone {pristine_name} {vm_name}")
         report.add(
             "VM recreation via lume clone (deep reset)",
@@ -431,9 +414,7 @@ async def main(vm_name: str, lume_url: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Validate window-management reset strategy in a Lume macOS VM"
-    )
+    parser = argparse.ArgumentParser(description="Validate window-management reset strategy in a Lume macOS VM")
     parser.add_argument(
         "--vm-name",
         default="soren-vm",
