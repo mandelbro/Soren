@@ -1,4 +1,4 @@
-"""Tests for VMManager tab introspection methods (Task 018)."""
+"""Tests for VMManager tab introspection methods."""
 
 from __future__ import annotations
 

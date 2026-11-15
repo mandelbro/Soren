@@ -1,4 +1,4 @@
-"""Site playbook Pydantic models and schema versioning (Tasks 002-003).
+"""Site playbook Pydantic models and schema versioning.
 
 Defines the per-source playbook data structure with three flow types
 (login, discovery, execution) and a migration registry for schema evolution.

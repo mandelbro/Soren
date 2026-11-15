@@ -1,4 +1,4 @@
-"""Tests for discovery_hint injection into adapter navigation prompts (Task 001)."""
+"""Tests for discovery_hint injection into adapter navigation prompts."""
 
 from soren.adapters.email_adapter import EmailAdapter
 from soren.adapters.generic_form import GenericFormAdapter

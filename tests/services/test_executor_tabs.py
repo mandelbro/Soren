@@ -1,4 +1,4 @@
-"""Tests for tab-aware execution in TaskExecutor (Task 019)."""
+"""Tests for tab-aware execution in TaskExecutor."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tests for the `soren train run` CLI command (Task 016)."""
+"""Tests for the `soren train run` CLI command."""
 
 from __future__ import annotations
 

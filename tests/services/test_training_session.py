@@ -1,4 +1,4 @@
-"""Tests for TrainingSession orchestrator with autonomous verify+retry (Task 014)."""
+"""Tests for TrainingSession orchestrator with autonomous verify+retry."""
 
 from __future__ import annotations
 

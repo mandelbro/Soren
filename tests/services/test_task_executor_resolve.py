@@ -1,4 +1,4 @@
-"""Tests for TaskExecutor cascading playbook resolve integration (Task 009)."""
+"""Tests for TaskExecutor cascading playbook resolve integration."""
 
 from __future__ import annotations
 

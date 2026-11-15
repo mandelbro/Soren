@@ -401,7 +401,7 @@ The RFC claims a peak budget of 25.6 GB on 32 GB machines:
 | Component | Claimed | Validated | Notes |
 |-----------|---------|-----------|-------|
 | Lume macOS VM | 8 GB | 8 GB | Configurable via Lume; this is a hard allocation |
-| UI-TARS 1.5 7B (6-bit MLX) | 5.5 GB | ~5.5 GB | Confirmed from prior Graphiti memory: "UI-TARS 1.5 7B 6-bit uses about 5.5GB" |
+| UI-TARS 1.5 7B (6-bit MLX) | 5.5 GB | ~5.5 GB | Confirmed by an earlier measurement: UI-TARS 1.5 7B 6-bit uses about 5.5 GB |
 | Gemma3:12B (Q4_K_M via Ollama) | 8.1 GB | ~7.5–8.5 GB | Depends on quantization level and KV cache |
 | Host macOS | 4 GB | 3.5–6 GB | Highly variable; 4 GB is optimistic with any background apps |
 | **Total** | **25.6 GB** | **24.5–28.5 GB** | Range reflects real-world variability |

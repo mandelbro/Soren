@@ -1,4 +1,4 @@
-"""Tests for max_instruction_tokens safety valve on PersonaContext (Task 022).
+"""Tests for max_instruction_tokens safety valve on PersonaContext.
 
 Verifies token limit truncation:
 - Content under limit passes unchanged

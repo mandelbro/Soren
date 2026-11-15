@@ -1,4 +1,4 @@
-"""Tests for auto-playbook generation from successful execution logs (Task 012)."""
+"""Tests for auto-playbook generation from successful execution logs."""
 
 from __future__ import annotations
 

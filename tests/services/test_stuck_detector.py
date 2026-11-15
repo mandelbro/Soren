@@ -1,4 +1,4 @@
-"""Tests for StuckDetector service (Task 010)."""
+"""Tests for StuckDetector service."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tests for TaskDiscovery playbook integration (Task 009)."""
+"""Tests for TaskDiscovery playbook integration."""
 
 from __future__ import annotations
 

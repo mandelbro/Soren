@@ -1,4 +1,4 @@
-"""Tests for PlaybookService cascading resolution, prompt formatting, and confidence tracking (Task 007)."""
+"""Tests for PlaybookService cascading resolution, prompt formatting, and confidence tracking."""
 
 from __future__ import annotations
 

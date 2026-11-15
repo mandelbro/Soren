@@ -10,11 +10,11 @@ April 8, 2026
 
 ## Status
 
-Discovery -- revised per validation findings, ready for implementation planning
+Accepted
 
 ## Prior Work
 
-`docs/discovery/autonomous-learning-system.md` designed the cascading playbook hierarchy, training session state machine, and auto-learning loop. Most of the infrastructure was implemented (Phases 1-4). This document addresses gaps that emerged during real-world training on the Sproutful survey platform -- problems the original discovery did not anticipate because they only surface under live VLM execution -- AND reconnects the autonomous-first learning loop (original Section 5) that was deprioritized during initial implementation.
+`docs/discovery/autonomous-learning-system.md` designed the cascading playbook hierarchy, training session state machine, and auto-learning loop. Most of that infrastructure was implemented. This document addresses gaps that emerged during real-world training on the Sproutful survey platform -- problems the original discovery did not anticipate because they only surface under live VLM execution -- AND reconnects the autonomous-first learning loop (original Section 5) that was deprioritized during initial implementation.
 
 ## RFC Reference
 
@@ -140,10 +140,9 @@ The `services:` key in `settings.yaml` provides a different kind of per-service 
 **Technical gap:** No chrome crop field exists on `TaskSource`, `SitePlaybook`, or the proposed `Service` model. The crop value is hardcoded to the environment. `training_session.py:_chrome_crop_active()` duplicates the env-var check rather than reading from config.
 
 **Proposed solution:**
-1. Add `chrome_crop_y: int = 0` to the new `Service` model (see O4 below)
-2. When a training session or task execution starts for a service, set `SOREN_CHROME_CROP_Y` in-process from the service config before any CUA operations begin
-3. Keep the env var as an override for debugging (explicit env var > config value > 0 default)
-4. Update `_chrome_crop_y()` to accept an optional override parameter, falling back to env var
+- The `Service` model (see O4 below) carries `chrome_crop_y: int = 0`.
+- When a training session or task execution starts for a service, the service's crop is in effect before any CUA operation begins.
+- The env var stays as a debugging override (explicit env var > config value > 0 default).
 
 **Impact if not fixed:** Every operator must memorize an undocumented environment variable. New operators will waste hours debugging why UI-TARS clicks on the Safari toolbar instead of webpage elements.
 
@@ -156,10 +155,10 @@ The `services:` key in `settings.yaml` provides a different kind of per-service 
 **Technical gap:** `VMManager` has tab-awareness methods (`get_tab_count`, `get_active_tab_url`, `switch_to_tab`, `find_tab_by_domain`) but no window-geometry introspection. There is no mechanism to detect window size or maximize a window via the VM.
 
 **Proposed solution:**
-1. Add `VMManager.maximize_active_window()` using AppleScript to set Safari's window bounds to screen size
-2. Add a `_calibrate_chrome_crop()` method that uses the VLM to determine the boundary between browser chrome and page content in a fresh screenshot. This is a one-shot calibration: capture a screenshot, ask the verification model "Where does the browser toolbar end and the webpage content begin? Return the y-coordinate." Cache the result for the session.
-3. For new tabs/windows during execution, the tab-transition handler (already in `TaskExecutor.execute_with_learning`) should trigger window maximization and optionally recalibrate
-4. Fallback: if VLM calibration fails, use the service-configured `chrome_crop_y` value
+- `VMManager.maximize_active_window()` uses AppleScript to set Safari's window bounds to the screen size.
+- Optional VLM calibration determines the boundary between browser chrome and page content in a fresh screenshot. It's one-shot: the verification model is asked where the browser toolbar ends and the webpage content begins, and the y-coordinate is cached for the session.
+- For new tabs or windows during execution, the tab-transition handler (already in `TaskExecutor.execute_with_learning`) maximizes the window, and optionally recalibrates.
+- If VLM calibration fails, the service-configured `chrome_crop_y` value applies.
 
 **Impact if not fixed:** Surveys that open in new windows will have misaligned click targets. UI-TARS will click on browser chrome instead of survey elements, causing step budget exhaustion.
 
@@ -180,13 +179,7 @@ The `services:` key in `settings.yaml` provides a different kind of per-service 
 **Proposed solution (three-layer context architecture):**
 
 **Layer 1: Persistent Agent Within Training Session**
-Replace the per-step `ComputerAgent` pattern with a single persistent agent for the entire training session. The agent's `messages` list accumulates screenshots and reasoning across steps, giving each subsequent instruction full visual and textual context from all prior steps.
-
-Implementation:
-- Move `ComputerAgent` creation from `_execute_single_step()` to `_init_vm()` (session start)
-- Store the persistent `messages` list on `TrainingSession` as `self._messages`
-- Each step appends to the existing messages rather than starting fresh
-- Keep `_SINGLE_STEP_BUDGET` per step to prevent runaway, but increase to 15-20
+A single persistent agent replaces the per-step `ComputerAgent` pattern (scope: one training flow, see the Decisions Log). The agent's `messages` list accumulates screenshots and reasoning across steps, giving each subsequent instruction full visual and textual context from all prior steps. Each step adds to the existing history rather than starting fresh. A per-step turn budget still bounds each instruction against runaway (see Q4).
 
 **Layer 2: Enriched Playbook Steps**
 Extend `PlaybookStep` with optional context fields:
@@ -201,10 +194,10 @@ class PlaybookStep(BaseModel):
     precondition: str | None = None     # What must be true before this step
 ```
 
-During training save, use the VLM to generate a `context_note` for each step: "At this point the login modal is visible with email field focused." Populate `precondition` from the previous step's `expected_after`. Save reference screenshots to `data/training/<service>/<flow>/step_N.png`.
+At training save, each step gets a VLM-generated `context_note`, such as "At this point the login modal is visible with email field focused." A step's `precondition` is the previous step's `expected_after`. Reference screenshots are saved to `data/training/<service>/<flow>/step_N.png`. The new fields change the playbook schema, so `SCHEMA_VERSION` becomes 2, and v1 playbooks migrate on load.
 
 **Layer 3: Application Context Summary**
-After a training flow completes, use the LLM to generate an application-level summary from the full step sequence:
+After a training flow completes, the LLM generates an application-level summary from the full step sequence:
 ```yaml
 # Added to SitePlaybook or Service model
 application_context:
@@ -243,7 +236,7 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 **Technical gap:** No mechanism to compose a reasoning prompt from stuck context and inject it into the CUA agent's message stream. The loop breaks on stuck detection rather than attempting adaptation.
 
-**Proposed solution:** A `StuckRecovery` class that composes reasoning prompts from stuck context (stuck_reason, recent_actions, last_screenshot, goal). The prompt is injected as a user message. Retry budget: 10 additional steps, max 1 reasoning retry per stuck detection.
+**Proposed solution:** A `StuckRecovery` class that composes reasoning prompts from stuck context (stuck_reason, recent_actions, last_screenshot, goal). The prompt is injected as a user message. Retry budget: 10 additional steps, max 1 reasoning retry per stuck detection. `TaskResult` carries the stuck reason and the reasoning prompt, for observability.
 
 **Impact if not fixed:** The agent never learns from failure during a run. Three identical retries waste budget without gaining information.
 
@@ -267,7 +260,7 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 **Technical gap:** No code path updates these fields. `execute_with_learning` does not feed success/failure back to playbook metadata.
 
-**Proposed solution:** Add `PlaybookService.update_confidence(service_name, flow_type, success)` with increment/decrement logic. Formula: `confidence = min(1.0, consecutive_successes / stability_threshold)`. Wire into meta-agent post-execution path.
+**Proposed solution:** Add `PlaybookService.update_confidence(service_name, flow_type, success)` with increment/decrement logic. Formula: `confidence = min(1.0, consecutive_successes / stability_threshold)`. The meta-agent updates confidence after each execution. The stability threshold is a `SorenSettings` value (default 3).
 
 **Impact if not fixed:** Confidence fields are dead data. Cannot distinguish proven playbooks from untested ones.
 
@@ -355,10 +348,10 @@ Run `soren cycle run` with the researcher persona configured for sproutful, no p
 8. If training mode is offered and completed: the resulting playbook should have resolved credentials (actual values, not "the email stored in credentials")
 
 **If this smoke test cannot pass, what's missing?**
-- No `autonomous_explore()` entry point (Phase 6)
-- No reasoning retry on stuck (Phase 5)
-- No auto-playbook call after success (Phase 6)
-- No confidence update after run (Phase 7)
+- No `autonomous_explore()` entry point (O6)
+- No reasoning retry on stuck (O5)
+- No auto-playbook call after success (O6)
+- No confidence update after run (O7)
 
 ---
 
@@ -410,164 +403,18 @@ VLM chrome calibration adds one extra Qwen3-VL inference per session (not per st
 
 ---
 
-## 8. Implementation Roadmap
-
-### Phase 0: Quick Wins (No Architecture Changes)
-
-**Goal:** Fix the training failures that triggered this discovery. Unblocks training immediately.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 0.1 | Wire `CredentialStore` into `TrainingSession` and CLI `train_run` | 2 pts |
-| 0.2 | Build credential handoff string in training (port `_build_credential_handoff` to shared utility) | 2 pts |
-| 0.3 | Inject credential handoff into `_execute_single_step` instructions | 1 pt |
-| 0.4 | Increase `_SINGLE_STEP_BUDGET` from 10 to 20 | 1 pt |
-
-**Dependencies:** None. These are targeted patches to existing code.
-
-### Phase 1: Persistent Training Agent (Context Preservation)
-
-**Goal:** Eliminate inter-step amnesia by maintaining a single agent across the training session.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 1.1 | Refactor `_execute_single_step` to accept and extend a persistent `messages` list | 3 pts |
-| 1.2 | Move `ComputerAgent` creation to session init, store as `self._agent` | 2 pts |
-| 1.3 | Add persona context and playbook content to persistent agent instructions | 2 pts |
-| 1.4 | Update verify-retry loop to work with persistent agent (no fresh agent per retry) | 2 pts |
-| 1.5 | Tests: verify message accumulation, context preservation across steps | 2 pts |
-
-**Dependencies:** Phase 0 (credential wiring needed for persona context).
-
-### Phase 2: Service Model
-
-**Goal:** Decouple service configuration from persona identity.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 2.1 | Create `src/soren/models/service.py` with `Service` and `ServiceConfig` models | 2 pts |
-| 2.2 | Create service loader (`services/service_loader.py`) reading from `config/services/*.yaml` | 2 pts |
-| 2.3 | Add `service: str` optional field to `TaskSource` for service reference | 1 pt |
-| 2.4 | Update `train_run` CLI to resolve service config and apply `chrome_crop_y` | 2 pts |
-| 2.5 | Migrate `settings.yaml` `services:` overrides to per-service YAML files | 2 pts |
-| 2.6 | Create `config/services/sproutful.yaml` as first service definition | 1 pt |
-| 2.7 | Tests: service loading, config resolution, backward compatibility | 2 pts |
-
-**Dependencies:** None (parallel with Phase 1).
-
-### Phase 3: Autonomous Chrome Crop
-
-**Goal:** Eliminate the `SOREN_CHROME_CROP_Y` environment variable requirement.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 3.1 | Implement chrome crop resolution: env var > service config > 0 | 2 pts |
-| 3.2 | Add `VMManager.maximize_active_window()` via AppleScript | 1 pt |
-| 3.3 | Wire window maximization into tab-transition handler | 1 pt |
-| 3.4 | Optional: VLM-based chrome boundary calibration (one-shot per session) | 3 pts |
-| 3.5 | Tests: crop resolution precedence, window maximization | 2 pts |
-
-**Dependencies:** Phase 2 (needs `ServiceConfig.chrome_crop_y`).
-
-### Phase 4: Enriched Playbook Context (Holistic Understanding)
-
-**Goal:** Training produces playbooks that encode application understanding, not just step sequences.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 4.1 | Add `context_note`, `precondition` fields to `PlaybookStep`; bump `SCHEMA_VERSION` to 2 with migration | 3 pts |
-| 4.2 | Generate context notes during training save (VLM describes each step's screenshot) | 2 pts |
-| 4.3 | Save reference screenshots per training flow to `data/training/<service>/<flow>/` | 2 pts |
-| 4.4 | Generate application context summary after training flow completion (LLM) | 3 pts |
-| 4.5 | Store application context on `Service` model, inject into `PersonaContext.build()` | 2 pts |
-| 4.6 | Tests: context generation, playbook enrichment, schema migration, round-trip from training to `PersonaContext.build()` to `TaskExecutor.execute()` | 2 pts |
-
-**Dependencies:** Phase 1 (persistent agent provides the context to capture) + Phase 2 (service model stores application context).
-
-### Phase 5: Reasoning-Based Retry (StuckDetector Enhancement)
-
-**Goal:** When stuck, the agent reasons about failure and tries a different approach instead of repeating the identical action.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 5.1 | Create `StuckRecovery` class that composes reasoning prompts from stuck context | 3 pts |
-| 5.2 | Modify `execute_with_learning` to inject reasoning prompt on first stuck detection and continue for N steps | 3 pts |
-| 5.3 | Add reasoning retry budget cap (default 10 steps) and terminal stuck detection (stuck again after reasoning = exit) | 2 pts |
-| 5.4 | Expose stuck reason + reasoning prompt in `TaskResult` for observability | 1 pt |
-| 5.5 | Tests: reasoning prompt composition, retry behavior, budget cap, terminal detection | 3 pts |
-
-**Dependencies:** Phase 0 (credential wiring needed for realistic stuck scenarios in tests).
-
-### Phase 6: Autonomous Exploration Mode
-
-**Goal:** The agent can learn to use a new service without human training by navigating autonomously and generating playbooks from success.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 6.1 | Add `autonomous_explore()` method to `TaskExecutor` combining goal-oriented CUA with StuckRecovery | 5 pts |
-| 6.2 | Wire `auto_generate_site_playbook()` call into `autonomous_explore` success path | 2 pts |
-| 6.3 | Wire `auto_generate_host_playbook()` call for first success on a new host domain | 2 pts |
-| 6.4 | Modify meta-agent cycle to call `autonomous_explore` before falling back to training for services with no playbook | 3 pts |
-| 6.5 | Tests: autonomous exploration success path, stuck-to-training fallback, playbook generation | 3 pts |
-
-**Dependencies:** Phase 2 (service model for service config) + Phase 5 (reasoning retry for stuck recovery).
-
-### Phase 7: Confidence Tracking
-
-**Goal:** Playbook confidence increases with consecutive successes and decreases on failure.
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| 7.1 | Add `PlaybookService.update_confidence()` with increment/decrement logic | 2 pts |
-| 7.2 | Wire confidence update into meta-agent post-execution path (after `execute_with_learning` returns) | 2 pts |
-| 7.3 | Add stability threshold config to `SorenSettings` (default: 3 consecutive successes) | 1 pt |
-| 7.4 | Tests: confidence increment, decrement, stability threshold, persistence across cycles | 2 pts |
-
-**Dependencies:** Phase 2 (service model for playbook storage path) + Phase 6 (auto-generated playbooks need initial confidence).
+## 8. Scope
 
 ### Orphaned Integration Points: Scope Declarations
 
 | Integration Point | Disposition | Rationale |
 |---|---|---|
-| StuckDetector with reasoning | **IN SCOPE** (Phase 5) | Core autonomous behavior -- the agent must reason about failure, not repeat it |
-| Auto-playbook generation from successful runs | **IN SCOPE** (Phase 6) | The primary mechanism for autonomous learning |
-| Confidence tracking across runs | **IN SCOPE** (Phase 7) | Required to distinguish proven playbooks from untested ones |
-| Host playbook auto-learning | **OUT OF SCOPE** | Phase 6 includes host playbook generation (task 6.3), but the full host-specific learning loop (extracting host-specific vs task-specific patterns) is deferred. Reason: host playbook quality depends on having multiple successful runs on different tasks within the same host, which requires confidence tracking to be stable first. Recommend as follow-up discovery. |
-| Tab-aware execution improvements | **OUT OF SCOPE** | Tab awareness is already implemented in `TaskExecutor.execute_with_learning` (tab detection, domain switching, platform return). Phase 3 adds window maximization which connects to the tab-transition handler. Further tab improvements (e.g., multi-window orchestration) are deferred as they require real-world data on which survey hosts open new tabs/windows. |
-| Credential resolution end-to-end test | **IN SCOPE** (Phase 0 + smoke test) | Phase 0 wires credentials into training. The smoke test (Section 6) verifies end-to-end credential resolution from encrypted store through PersonaContext to CUA agent. |
-
-### Dependency Graph
-
-```
-Phase 0 (Quick Wins) ──> Phase 1 (Persistent Agent) ─────────────────────┐
-     [6 pts]                  [11 pts]                                    |
-                                                                          v
-Phase 2 (Service Model) ──> Phase 3 (Chrome Crop)      Phase 4 (Enriched Context)
-     [12 pts]                  [9 pts]                       [14 pts]
-         |                                                     ^
-         |                                                     |
-         +──> Phase 5 (Reasoning Retry) ──> Phase 6 (Autonomous Explore)
-                   [12 pts]                      [15 pts]
-                                                     |
-                                                     v
-                                              Phase 7 (Confidence)
-                                                   [7 pts]
-
-Phase 4 depends on: Phase 1 + Phase 2
-Phase 5 depends on: Phase 0
-Phase 6 depends on: Phase 2 + Phase 5
-Phase 7 depends on: Phase 2 + Phase 6
-```
-
-**Total estimated effort:** 86 points across 8 phases (0-7).
-
-**Recommended delivery:**
-- Sprint 1: Phase 0 + Phase 2 (18 pts) -- unblock training + service model foundation
-- Sprint 2: Phase 1 + Phase 5 (23 pts) -- persistent agent + reasoning retry
-- Sprint 3: Phase 3 + Phase 6 (24 pts) -- chrome crop + autonomous exploration
-- Sprint 4: Phase 4 + Phase 7 (21 pts) -- enriched context + confidence tracking
-
-Phase 0 is deliberately separate and small. It can be shipped as a hotfix to unblock training while the larger phases are designed. Phases 5-7 are the autonomous-first phases that close the gap between the document's title and its delivered behavior.
+| StuckDetector with reasoning | **IN SCOPE** (O5) | Core autonomous behavior -- the agent must reason about failure, not repeat it |
+| Auto-playbook generation from successful runs | **IN SCOPE** (O6) | The primary mechanism for autonomous learning |
+| Confidence tracking across runs | **IN SCOPE** (O7) | Required to distinguish proven playbooks from untested ones |
+| Host playbook auto-learning | **OUT OF SCOPE** | Autonomous exploration (O6) generates a host playbook on the first success on a new host, but the full host-specific learning loop (extracting host-specific vs task-specific patterns) is deferred. Reason: host playbook quality depends on having multiple successful runs on different tasks within the same host, which requires confidence tracking to be stable first. Recommend as follow-up discovery. |
+| Tab-aware execution improvements | **OUT OF SCOPE** | Tab awareness is already implemented in `TaskExecutor.execute_with_learning` (tab detection, domain switching, platform return). Window maximization (O2) connects to the tab-transition handler. Further tab improvements (e.g., multi-window orchestration) are deferred as they require real-world data on which survey hosts open new tabs/windows. |
+| Credential resolution end-to-end test | **IN SCOPE** (Failure 1 + smoke test) | Training gets the persona's credentials (Failure 1). The smoke test (Section 6) verifies end-to-end credential resolution from encrypted store through PersonaContext to CUA agent. |
 
 ---
 

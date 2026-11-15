@@ -345,7 +345,7 @@ end tell
             warnings=warnings,
         )
 
-    # --- Tab introspection (Task 018) ---
+    # --- Tab introspection ---
 
     async def get_tab_count(self) -> int:
         """Count open Safari tabs in window 1. Returns 0 on error."""
