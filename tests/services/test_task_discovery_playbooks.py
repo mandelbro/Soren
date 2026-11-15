@@ -24,11 +24,11 @@ def _make_settings() -> MagicMock:
     return settings
 
 
-def _make_source(name: str = "prolific") -> MagicMock:
+def _make_source(name: str = "betapanel") -> MagicMock:
     source = MagicMock()
     source.name = name
     source.type = "survey_platform"
-    source.url = "https://prolific.com"
+    source.url = "https://betapanel.example"
     source.discovery_hint = ""
     return source
 
@@ -49,8 +49,8 @@ def _make_adapter() -> MagicMock:
 def _make_playbook_service_with_login() -> MagicMock:
     svc = MagicMock()
     site = SitePlaybook(
-        source_name="prolific",
-        source_url="https://prolific.com",
+        source_name="betapanel",
+        source_url="https://betapanel.example",
         flows=SiteFlows(
             login=LoginFlow(
                 steps=[
@@ -67,8 +67,8 @@ def _make_playbook_service_with_login() -> MagicMock:
 def _make_playbook_service_with_discovery() -> MagicMock:
     svc = MagicMock()
     site = SitePlaybook(
-        source_name="prolific",
-        source_url="https://prolific.com",
+        source_name="betapanel",
+        source_url="https://betapanel.example",
         flows=SiteFlows(
             discovery=DiscoveryFlow(
                 discovery_ready_indicator="Task list loaded",
@@ -99,7 +99,7 @@ class TestPhase1NavigateWithPlaybooks:
 
         prompt = discovery._build_nav_prompt(MagicMock(), _make_persona(), source)
         assert "Click login" in prompt
-        playbook_svc.load_site.assert_called_once_with("prolific")
+        playbook_svc.load_site.assert_called_once_with("betapanel")
 
     def test_falls_back_to_adapter_when_no_playbook(self) -> None:
         settings = _make_settings()
@@ -123,8 +123,8 @@ class TestPhase1NavigateWithPlaybooks:
         settings = _make_settings()
         playbook_svc = MagicMock()
         site = SitePlaybook(
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flows=SiteFlows(
                 login=LoginFlow(
                     steps=[PlaybookStep(seq=1, instruction="Log in", expected_after="Logged in")],

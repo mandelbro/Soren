@@ -37,6 +37,10 @@ data/*.json
 # Environment (copy from .env.example)
 .env
 
+# Personas are local (real identities); only the example is shared
+config/personas/*.yaml
+!config/personas/example.yaml
+
 # Credentials (NEVER commit)
 config/*credentials*
 data/*credentials*

@@ -394,7 +394,7 @@ Extract all four patches into `src/soren/patches/`:
 
 ```yaml
 services:
-  prolific:
+  betapanel:
     enter_key_behavior: "enter_only"   # no Escape prefix
   slack:
     enter_key_behavior: "escape_enter"  # Escape then Enter

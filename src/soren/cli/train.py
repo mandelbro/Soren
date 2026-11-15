@@ -95,7 +95,7 @@ def _resolve_source_url(
       3. If neither is available, return "" so TrainingSession skips
          auto-navigation and falls back to human-instructed navigation.
 
-    This lets the operator run ``soren train run sproutful`` and have the
+    This lets the operator run ``soren train run acmepanel`` and have the
     URL automatically picked up from ``config/personas/*.yaml``'s
     ``task_sources`` list — the URL is already configured there for
     discovery, no reason to require re-entry at training time.

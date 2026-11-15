@@ -18,7 +18,7 @@
 
 ## 2. Integration Gaps
 
-1. **Credential flow into training is described but no smoke test verifies it.** Phase 0 wires CredentialStore, but no acceptance scenario says "run `soren train run sproutful --flow login` and confirm the agent types the actual password."
+1. **Credential flow into training is described but no smoke test verifies it.** Phase 0 wires CredentialStore, but no acceptance scenario says "run `soren train run acmepanel --flow login` and confirm the agent types the actual password."
 2. **PersonaContext.build() injection path is hand-waved.** Phase 1 task 1.3 says "add persona context and playbook content to persistent agent instructions" but does not specify which PersonaContext parameters change or how credential handoff feeds through.
 3. **Service model -> chrome crop -> VNC patch data flow is fragile.** Phase 3 relies on setting `os.environ["SOREN_CHROME_CROP_Y"]` in-process before CUA starts. No task verifies that the env-var is set before the first screenshot capture in a training session.
 4. **Application context (Phase 4) -> PersonaContext.build() -> TaskExecutor.execute() chain is unverified.** Phase 4 task 4.5 says "inject into PersonaContext.build()" but no task tests the round-trip from training to autonomous execution using the generated context.
@@ -70,6 +70,6 @@ All codebase references are current and accurate.
 Specific revisions required before task generation:
 
 1. **Add an Integration Requirements section** with data-flow-in, data-flow-out, and assumption alignment -- the exact format specified in `docs/process/closing-the-integration-gap.md` Section 1.
-2. **Add at least one end-to-end smoke test scenario** (e.g., "Train a Sproutful login, then run `soren cycle run` and confirm the agent uses the trained playbook with resolved credentials to log in without human intervention").
+2. **Add at least one end-to-end smoke test scenario** (e.g., "Train an Acme Panel login, then run `soren cycle run` and confirm the agent uses the trained playbook with resolved credentials to log in without human intervention").
 3. **Rename or re-scope.** Either (a) rename to "Training Mode Integration Fixes" to match what the phases actually deliver, or (b) add phases that actually enhance autonomous behavior (StuckDetector improvements, auto-playbook refinement, confidence-driven verification reduction).
 4. **Address orphaned integrations** from items 1-5 above, even if only to explicitly declare them out-of-scope with rationale.

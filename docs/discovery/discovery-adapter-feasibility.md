@@ -618,7 +618,7 @@ Each service's playbook should include a `## Login` section:
 - "Enable notifications?" popup → Click "Not now"
 
 ### Last Updated
-<!-- soren-generated: 2026-03-15, task: discovery_prolific_001 -->
+<!-- soren-generated: 2026-03-15, task: discovery_betapanel_001 -->
 ```
 
 ---
@@ -770,7 +770,7 @@ Each "round" = modify prompt → run discovery → check output → identify fai
 
 ### Prototype First (Before Phase 4)
 
-1. **Single-service extraction test**: Before building the full pipeline, run UI-TARS against one real survey platform (e.g., Prolific) and capture screenshots. Then manually feed those screenshots to Qwen3-VL with the extraction prompt. Measure: how many items does it find? What fields does it get wrong?
+1. **Single-service extraction test**: Before building the full pipeline, run UI-TARS against one real survey platform (e.g., Beta Panel) and capture screenshots. Then manually feed those screenshots to Qwen3-VL with the extraction prompt. Measure: how many items does it find? What fields does it get wrong?
    - **Estimated time**: 2-4 hours
    - **Decision gate**: If Qwen3-VL finds <50% of items on a real dashboard, the three-phase approach needs fundamental revision (consider DOM-based fallback for extraction only).
 

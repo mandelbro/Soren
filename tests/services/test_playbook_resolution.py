@@ -48,10 +48,10 @@ def _make_svc(tmp_path: Path, *, cascade_enabled: bool = True) -> PlaybookServic
     return PlaybookService(settings, _make_llm())
 
 
-def _make_site_with_execution(source_name: str = "prolific") -> SitePlaybook:
+def _make_site_with_execution(source_name: str = "betapanel") -> SitePlaybook:
     return SitePlaybook(
         source_name=source_name,
-        source_url="https://prolific.com",
+        source_url="https://betapanel.example",
         flows=SiteFlows(
             login=LoginFlow(
                 steps=[
@@ -81,13 +81,13 @@ class TestResolve:
         svc.save_site(_make_site_with_execution())
         svc.save_host(
             HostPlaybook(
-                host_domain="qualtrics.com",
+                host_domain="quickform.example",
                 navigation={"quirk": "Double-click submit"},
             )
         )
         _write_base_playbook(tmp_path / "playbooks" / "base", "survey", {"nav": "click next"})
 
-        result = svc.resolve("prolific", "qualtrics.com", "survey", "execution")
+        result = svc.resolve("betapanel", "quickform.example", "survey", "execution")
         assert "Site-Specific Instructions" in result
         assert "Host Instructions" in result
         assert "General Guidelines" in result
@@ -95,7 +95,7 @@ class TestResolve:
     def test_resolve_site_only(self, tmp_path: Path) -> None:
         svc = _make_svc(tmp_path)
         svc.save_site(_make_site_with_execution())
-        result = svc.resolve("prolific", None, "survey", "execution")
+        result = svc.resolve("betapanel", None, "survey", "execution")
         assert "Site-Specific Instructions" in result
         assert "Host Instructions" not in result
         assert "General Guidelines" not in result
@@ -116,7 +116,7 @@ class TestResolve:
         svc = _make_svc(tmp_path, cascade_enabled=False)
         svc.save_site(_make_site_with_execution())
         _write_base_playbook(tmp_path / "playbooks" / "base", "survey", {"nav": "click next"})
-        result = svc.resolve("prolific", None, "survey", "execution")
+        result = svc.resolve("betapanel", None, "survey", "execution")
         # Should only contain site content, no base/host
         assert "General Guidelines" not in result
         assert "Host Instructions" not in result
@@ -155,13 +155,13 @@ class TestToPromptInstructions:
                     instruction="Click external link",
                     expected_after="New tab opened",
                     triggers_new_tab=True,
-                    host_domain="qualtrics.com",
+                    host_domain="quickform.example",
                 ),
             ],
         )
         result = svc.to_prompt_instructions(flow, "execution")
         assert "TAB" in result
-        assert "qualtrics.com" in result
+        assert "quickform.example" in result
 
     def test_annotates_delegate_to_host(self, tmp_path: Path) -> None:
         svc = _make_svc(tmp_path)
@@ -171,7 +171,7 @@ class TestToPromptInstructions:
                     seq=1,
                     instruction="DELEGATE_TO_HOST",
                     expected_after="Host survey loaded",
-                    host_domain="qualtrics.com",
+                    host_domain="quickform.example",
                 ),
             ],
         )
@@ -202,8 +202,8 @@ class TestUpdateConfidence:
         site.flows.execution["survey"].consecutive_successes = 2
         svc.save_site(site)
 
-        svc.update_confidence("prolific", "execution", success=True, task_type="survey")
-        loaded = svc.load_site("prolific")
+        svc.update_confidence("betapanel", "execution", success=True, task_type="survey")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.execution["survey"].confidence == pytest.approx(0.65)
         assert loaded.flows.execution["survey"].consecutive_successes == 3
@@ -215,8 +215,8 @@ class TestUpdateConfidence:
         site.flows.execution["survey"].consecutive_successes = 3
         svc.save_site(site)
 
-        svc.update_confidence("prolific", "execution", success=False, task_type="survey")
-        loaded = svc.load_site("prolific")
+        svc.update_confidence("betapanel", "execution", success=False, task_type="survey")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.execution["survey"].confidence == pytest.approx(0.3)
         assert loaded.flows.execution["survey"].consecutive_successes == 0
@@ -227,8 +227,8 @@ class TestUpdateConfidence:
         site.flows.execution["survey"].confidence = 0.1
         svc.save_site(site)
 
-        svc.update_confidence("prolific", "execution", success=False, task_type="survey")
-        loaded = svc.load_site("prolific")
+        svc.update_confidence("betapanel", "execution", success=False, task_type="survey")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.execution["survey"].confidence == 0.0
 
@@ -238,8 +238,8 @@ class TestUpdateConfidence:
         site.flows.execution["survey"].confidence = 0.95
         svc.save_site(site)
 
-        svc.update_confidence("prolific", "execution", success=True, task_type="survey")
-        loaded = svc.load_site("prolific")
+        svc.update_confidence("betapanel", "execution", success=True, task_type="survey")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.execution["survey"].confidence == 1.0
 
@@ -249,7 +249,7 @@ class TestUpdateConfidence:
         site.flows.login.confidence = 0.3
         svc.save_site(site)
 
-        svc.update_confidence("prolific", "login", success=True)
-        loaded = svc.load_site("prolific")
+        svc.update_confidence("betapanel", "login", success=True)
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.login.confidence == pytest.approx(0.45)

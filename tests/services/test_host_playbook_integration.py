@@ -39,21 +39,21 @@ class TestResolveIncludesHost:
 
         # Save a host playbook
         host = HostPlaybook(
-            host_domain="qualtrics.com",
+            host_domain="quickform.example",
             navigation={"submit_button": "Bottom-right green button"},
             quirks=["Requires scrolling to bottom before submit is clickable"],
         )
         svc.save_host(host)
 
         result = svc.resolve(
-            source_name="prolific",
-            host_domain="qualtrics.com",
+            source_name="betapanel",
+            host_domain="quickform.example",
             task_type="survey",
             flow_type="execution",
         )
 
         assert "Host Instructions" in result
-        assert "qualtrics" in result.lower() or "submit_button" in result
+        assert "quickform" in result.lower() or "submit_button" in result
 
     def test_resolve_skips_host_when_no_playbook(self, tmp_path):
         from soren.services.playbook_service import PlaybookService
@@ -67,7 +67,7 @@ class TestResolveIncludesHost:
         svc = PlaybookService(settings, llm)
 
         result = svc.resolve(
-            source_name="prolific",
+            source_name="betapanel",
             host_domain="unknown-host.com",
             task_type="survey",
             flow_type="execution",
@@ -88,10 +88,10 @@ class TestHostAutoLearning:
         host = await auto_generate_host_playbook(
             llm=llm,
             step_log=[{"action_type": "click", "action_data": {"target": "submit"}, "vlm_reasoning": "Clicked submit"}],
-            host_domain="qualtrics.com",
+            host_domain="quickform.example",
         )
 
-        assert host.host_domain == "qualtrics.com"
+        assert host.host_domain == "quickform.example"
         assert host.learned_from == "auto"
 
     @pytest.mark.asyncio
@@ -108,7 +108,7 @@ class TestHostAutoLearning:
         svc = PlaybookService(settings, llm)
 
         existing = HostPlaybook(
-            host_domain="qualtrics.com",
+            host_domain="quickform.example",
             navigation={"submit": "manual instructions"},
             learned_from="human",
             confidence=0.9,
@@ -116,7 +116,7 @@ class TestHostAutoLearning:
         svc.save_host(existing)
 
         # Verify it exists
-        loaded = svc.load_host("qualtrics.com")
+        loaded = svc.load_host("quickform.example")
         assert loaded is not None
         assert loaded.learned_from == "human"
 
@@ -155,12 +155,12 @@ class TestHostConfidenceTracking:
         llm = MagicMock()
         svc = PlaybookService(settings, llm)
 
-        host = HostPlaybook(host_domain="qualtrics.com", confidence=0.5)
+        host = HostPlaybook(host_domain="quickform.example", confidence=0.5)
         svc.save_host(host)
 
-        svc.update_host_confidence("qualtrics.com", success=True)
+        svc.update_host_confidence("quickform.example", success=True)
 
-        updated = svc.load_host("qualtrics.com")
+        updated = svc.load_host("quickform.example")
         assert updated is not None
         assert updated.confidence > 0.5
 
@@ -175,11 +175,11 @@ class TestHostConfidenceTracking:
         llm = MagicMock()
         svc = PlaybookService(settings, llm)
 
-        host = HostPlaybook(host_domain="qualtrics.com", confidence=0.5)
+        host = HostPlaybook(host_domain="quickform.example", confidence=0.5)
         svc.save_host(host)
 
-        svc.update_host_confidence("qualtrics.com", success=False)
+        svc.update_host_confidence("quickform.example", success=False)
 
-        updated = svc.load_host("qualtrics.com")
+        updated = svc.load_host("quickform.example")
         assert updated is not None
         assert updated.confidence < 0.5

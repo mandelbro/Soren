@@ -8,8 +8,8 @@ from soren.models.persona import Persona
 from soren.models.task_source import TaskSource
 
 
-def _source(url: str = "https://app.prolific.co") -> TaskSource:
-    return TaskSource(name="prolific", type="survey_platform", url=url)
+def _source(url: str = "https://app.betapanel.example") -> TaskSource:
+    return TaskSource(name="betapanel", type="survey_platform", url=url)
 
 
 def _persona() -> Persona:

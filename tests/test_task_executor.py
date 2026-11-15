@@ -163,9 +163,9 @@ class TestTaskExecutorConstruction:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
-            await executor.execute(_make_task(), _make_persona_with_source("sproutful"), mock_computer)
+            await executor.execute(_make_task(), _make_persona_with_source("acmepanel"), mock_computer)
             instructions = mock_agent_cls.call_args[1]["instructions"]
-            assert "credential_ref: sproutful" in instructions
+            assert "credential_ref: acmepanel" in instructions
             assert "username: user@example.com" in instructions
             assert "password: secret123" in instructions
 

@@ -36,8 +36,8 @@ def _mock_settings():
 
 def _sample_site_playbook() -> SitePlaybook:
     return SitePlaybook(
-        source_name="prolific",
-        source_url="https://prolific.com",
+        source_name="betapanel",
+        source_url="https://betapanel.example",
         created_at=datetime(2026, 3, 1, tzinfo=UTC),
         flows=SiteFlows(
             login=LoginFlow(
@@ -72,7 +72,7 @@ class TestTrainList:
             result = runner.invoke(cli, ["train", "list"])
 
         assert result.exit_code == 0
-        assert "prolific" in result.output
+        assert "betapanel" in result.output
 
     def test_list_no_playbooks(self, runner):
         with (
@@ -101,10 +101,10 @@ class TestTrainShow:
             mock_svc.load_site.return_value = _sample_site_playbook()
             mock_svc_cls.return_value = mock_svc
 
-            result = runner.invoke(cli, ["train", "show", "prolific"])
+            result = runner.invoke(cli, ["train", "show", "betapanel"])
 
         assert result.exit_code == 0
-        assert "prolific" in result.output
+        assert "betapanel" in result.output
         assert "login" in result.output.lower()
 
     def test_show_not_found(self, runner):
@@ -132,7 +132,7 @@ class TestTrainShow:
             mock_svc.resolve.return_value = "Resolved cascade content"
             mock_svc_cls.return_value = mock_svc
 
-            result = runner.invoke(cli, ["train", "show", "prolific", "--cascade"])
+            result = runner.invoke(cli, ["train", "show", "betapanel", "--cascade"])
 
         assert result.exit_code == 0
         assert "cascade" in result.output.lower() or "Resolved" in result.output
@@ -149,10 +149,10 @@ class TestTrainDelete:
             mock_svc.delete_site.return_value = True
             mock_svc_cls.return_value = mock_svc
 
-            result = runner.invoke(cli, ["train", "delete", "prolific"], input="y\n")
+            result = runner.invoke(cli, ["train", "delete", "betapanel"], input="y\n")
 
         assert result.exit_code == 0
-        mock_svc.delete_site.assert_called_once_with("prolific")
+        mock_svc.delete_site.assert_called_once_with("betapanel")
         assert "Deleted" in result.output or "deleted" in result.output
 
     def test_delete_not_found(self, runner):
@@ -183,7 +183,7 @@ class TestTrainDelete:
             mock_svc.save_site.return_value = None
             mock_svc_cls.return_value = mock_svc
 
-            result = runner.invoke(cli, ["train", "delete", "prolific", "--flow", "login"], input="y\n")
+            result = runner.invoke(cli, ["train", "delete", "betapanel", "--flow", "login"], input="y\n")
 
         assert result.exit_code == 0
         assert "login" in result.output.lower()
@@ -197,7 +197,7 @@ class TestTrainDelete:
             mock_svc = MagicMock()
             mock_svc_cls.return_value = mock_svc
 
-            result = runner.invoke(cli, ["train", "delete", "prolific"], input="n\n")
+            result = runner.invoke(cli, ["train", "delete", "betapanel"], input="n\n")
 
         assert result.exit_code == 0
         mock_svc.delete_site.assert_not_called()

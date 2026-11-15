@@ -1,6 +1,6 @@
 """Host and base playbook Pydantic models.
 
-HostPlaybook: host-specific navigation patterns (e.g., qualtrics.com quirks).
+HostPlaybook: host-specific navigation patterns (e.g., quickform.example quirks).
 BasePlaybook: generic task-type patterns (e.g., survey.yaml structure).
 See discovery document Section 4 for the cascading hierarchy.
 """

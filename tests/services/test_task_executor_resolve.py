@@ -27,7 +27,7 @@ def _make_task() -> Task:
         dedup_key="k1",
         title="Complete survey",
         description="Fill out the survey",
-        source_name="prolific",
+        source_name="betapanel",
         task_type="survey",
     )
 
@@ -56,7 +56,7 @@ class TestExecutorUsesResolve:
         assert content is not None
         assert "Site-Specific Instructions" in content
         playbook_svc.resolve.assert_called_once_with(
-            source_name="prolific",
+            source_name="betapanel",
             host_domain=None,
             task_type="survey",
             flow_type="execution",

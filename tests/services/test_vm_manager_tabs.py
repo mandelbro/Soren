@@ -51,10 +51,10 @@ class TestGetActiveTabUrl:
     @pytest.mark.asyncio
     async def test_returns_url(self, vm_manager):
         with patch.object(
-            vm_manager, "_run_osascript", new_callable=AsyncMock, return_value="https://prolific.com/studies"
+            vm_manager, "_run_osascript", new_callable=AsyncMock, return_value="https://betapanel.example/studies"
         ):
             result = await vm_manager.get_active_tab_url()
-        assert result == "https://prolific.com/studies"
+        assert result == "https://betapanel.example/studies"
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, vm_manager):
@@ -82,7 +82,7 @@ class TestFindTabByDomain:
     async def test_finds_matching_tab(self, vm_manager):
         # osascript returns tab index where URL contains domain
         with patch.object(vm_manager, "_run_osascript", new_callable=AsyncMock, return_value="2"):
-            result = await vm_manager.find_tab_by_domain("qualtrics.com")
+            result = await vm_manager.find_tab_by_domain("quickform.example")
         assert result == 2
 
     @pytest.mark.asyncio
@@ -94,7 +94,7 @@ class TestFindTabByDomain:
     @pytest.mark.asyncio
     async def test_returns_none_on_error(self, vm_manager):
         with patch.object(vm_manager, "_run_osascript", new_callable=AsyncMock, side_effect=Exception("fail")):
-            result = await vm_manager.find_tab_by_domain("qualtrics.com")
+            result = await vm_manager.find_tab_by_domain("quickform.example")
         assert result is None
 
     @pytest.mark.asyncio

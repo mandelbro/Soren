@@ -72,13 +72,13 @@ class TestTrainRunCommand:
             mock_session.steps = [PlaybookStep(seq=1, instruction="Click login", expected_after="Logged in")]
             mock_session_cls.return_value = mock_session
 
-            result = runner.invoke(cli, ["train", "run", "prolific"])
+            result = runner.invoke(cli, ["train", "run", "betapanel"])
 
         assert result.exit_code == 0
         # Without --flow, trains login -> discovery -> execution (3 calls)
         assert mock_session_cls.call_count == 3
         first_call = mock_session_cls.call_args_list[0]
-        assert first_call.kwargs["source_name"] == "prolific"
+        assert first_call.kwargs["source_name"] == "betapanel"
         assert first_call.kwargs["flow_type"] == "login"
 
     def test_train_run_with_flow_option(self, runner):
@@ -99,7 +99,7 @@ class TestTrainRunCommand:
             mock_session.steps = []
             mock_session_cls.return_value = mock_session
 
-            result = runner.invoke(cli, ["train", "run", "prolific", "--flow", "discovery"])
+            result = runner.invoke(cli, ["train", "run", "betapanel", "--flow", "discovery"])
 
         assert result.exit_code == 0
         call_kwargs = mock_session_cls.call_args
@@ -119,7 +119,7 @@ class TestTrainRunCommand:
             mock_session.steps = []
             mock_session_cls.return_value = mock_session
 
-            result = runner.invoke(cli, ["train", "run", "prolific"])
+            result = runner.invoke(cli, ["train", "run", "betapanel"])
 
         assert result.exit_code == 0
         assert "abort" in result.output.lower() or "cancel" in result.output.lower()
@@ -142,7 +142,7 @@ class TestTrainRunCommand:
             mock_session.steps = []
             mock_session_cls.return_value = mock_session
 
-            result = runner.invoke(cli, ["train", "run", "prolific"])
+            result = runner.invoke(cli, ["train", "run", "betapanel"])
 
         assert result.exit_code == 0
         # Should have created 3 sessions (login, discovery, execution)
@@ -254,17 +254,17 @@ class TestUrlResolvedFromPersona:
         the persona task_sources list and uses that URL."""
         from soren.cli.train import _resolve_source_url
 
-        personas = [self._persona_with_source("sproutful", "https://sproutful.com/home")]
-        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
-        assert resolved == "https://sproutful.com/home"
+        personas = [self._persona_with_source("acmepanel", "https://acmepanel.example/home")]
+        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
+        assert resolved == "https://acmepanel.example/home"
 
     def test_explicit_url_flag_overrides_persona(self, runner):
         """When --url IS passed, it takes precedence over the persona URL."""
         from soren.cli.train import _resolve_source_url
 
-        personas = [self._persona_with_source("sproutful", "https://sproutful.com/home")]
+        personas = [self._persona_with_source("acmepanel", "https://acmepanel.example/home")]
         resolved = _resolve_source_url(
-            source_name="sproutful",
+            source_name="acmepanel",
             url_flag="https://override.example.com",
             personas=personas,
         )
@@ -276,7 +276,7 @@ class TestUrlResolvedFromPersona:
         from soren.cli.train import _resolve_source_url
 
         personas = [self._persona_with_source("other-source", "https://other.example.com")]
-        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
         assert resolved == ""
 
     def test_first_matching_persona_wins(self, runner):
@@ -285,10 +285,10 @@ class TestUrlResolvedFromPersona:
         from soren.cli.train import _resolve_source_url
 
         personas = [
-            self._persona_with_source("sproutful", "https://first.example.com"),
-            self._persona_with_source("sproutful", "https://second.example.com"),
+            self._persona_with_source("acmepanel", "https://first.example.com"),
+            self._persona_with_source("acmepanel", "https://second.example.com"),
         ]
-        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
         assert resolved == "https://first.example.com"
 
     def test_empty_persona_url_skipped(self, runner):
@@ -297,10 +297,10 @@ class TestUrlResolvedFromPersona:
         from soren.cli.train import _resolve_source_url
 
         personas = [
-            self._persona_with_source("sproutful", ""),  # matches name but no URL
-            self._persona_with_source("sproutful", "https://has-url.example.com"),
+            self._persona_with_source("acmepanel", ""),  # matches name but no URL
+            self._persona_with_source("acmepanel", "https://has-url.example.com"),
         ]
-        resolved = _resolve_source_url(source_name="sproutful", url_flag=None, personas=personas)
+        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
         assert resolved == "https://has-url.example.com"
 
 
@@ -326,7 +326,7 @@ class TestTrainRunUrlFlag:
         has a different URL configured (flag wins over persona)."""
         MockSession = self._patched_session_cls()
         persona_with_different_url = TestUrlResolvedFromPersona._persona_with_source(
-            "sproutful", "https://from-persona.example.com"
+            "acmepanel", "https://from-persona.example.com"
         )
         with (
             patch("soren.cli.train._configure_training_logging"),
@@ -339,21 +339,21 @@ class TestTrainRunUrlFlag:
         ):
             result = runner.invoke(
                 cli,
-                ["train", "run", "sproutful", "--flow", "login", "--url", "https://sproutful.com"],
+                ["train", "run", "acmepanel", "--flow", "login", "--url", "https://acmepanel.example"],
             )
 
         assert result.exit_code == 0, result.output
         assert MockSession.called, "TrainingSession should be instantiated"
         ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "https://sproutful.com", (
-            f"Expected source_url='https://sproutful.com' (flag wins); got {ctor_kwargs.get('source_url')!r}"
+        assert ctor_kwargs.get("source_url") == "https://acmepanel.example", (
+            f"Expected source_url='https://acmepanel.example' (flag wins); got {ctor_kwargs.get('source_url')!r}"
         )
 
     def test_url_from_persona_when_flag_absent(self, runner):
         """When --url is omitted, the CLI looks up the URL from the persona
         task_sources list by source name."""
         MockSession = self._patched_session_cls()
-        persona = TestUrlResolvedFromPersona._persona_with_source("sproutful", "https://sproutful.com/home")
+        persona = TestUrlResolvedFromPersona._persona_with_source("acmepanel", "https://acmepanel.example/home")
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
@@ -363,12 +363,12 @@ class TestTrainRunUrlFlag:
             patch("soren.cli.train.PlaybookService"),
             patch("soren.cli.train.load_all", return_value=[persona]),
         ):
-            result = runner.invoke(cli, ["train", "run", "sproutful", "--flow", "login"])
+            result = runner.invoke(cli, ["train", "run", "acmepanel", "--flow", "login"])
 
         assert result.exit_code == 0, result.output
         assert MockSession.called, "TrainingSession should be instantiated"
         ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "https://sproutful.com/home", (
+        assert ctor_kwargs.get("source_url") == "https://acmepanel.example/home", (
             f"Expected source_url from persona; got {ctor_kwargs.get('source_url')!r}"
         )
 
@@ -386,7 +386,7 @@ class TestTrainRunUrlFlag:
             patch("soren.cli.train.PlaybookService"),
             patch("soren.cli.train.load_all", return_value=[other_persona]),
         ):
-            result = runner.invoke(cli, ["train", "run", "sproutful", "--flow", "login"])
+            result = runner.invoke(cli, ["train", "run", "acmepanel", "--flow", "login"])
 
         assert result.exit_code == 0, result.output
         assert MockSession.called, "TrainingSession should be instantiated"

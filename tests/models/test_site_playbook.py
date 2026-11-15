@@ -39,9 +39,9 @@ class TestPlaybookStep:
         assert step.field == "credential:username"
 
     def test_tab_transition_fields(self):
-        step = PlaybookStep(**_step(1, triggers_new_tab=True, host_domain="qualtrics.com"))
+        step = PlaybookStep(**_step(1, triggers_new_tab=True, host_domain="quickform.example"))
         assert step.triggers_new_tab is True
-        assert step.host_domain == "qualtrics.com"
+        assert step.host_domain == "quickform.example"
 
 
 class TestFlowPlaybook:
@@ -79,8 +79,8 @@ class TestLoginFlow:
 class TestSitePlaybook:
     def test_full_construction(self):
         playbook = SitePlaybook(
-            source_name="sproutful",
-            source_url="https://sproutful.com",
+            source_name="acmepanel",
+            source_url="https://acmepanel.example",
             flows=SiteFlows(
                 login=LoginFlow(
                     steps=[PlaybookStep(**_step(1)), PlaybookStep(**_step(2))],
@@ -98,7 +98,7 @@ class TestSitePlaybook:
                 },
             ),
         )
-        assert playbook.source_name == "sproutful"
+        assert playbook.source_name == "acmepanel"
         assert playbook.flows.login is not None
         assert playbook.flows.discovery is not None
         assert "survey" in playbook.flows.execution

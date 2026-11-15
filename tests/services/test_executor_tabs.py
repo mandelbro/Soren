@@ -30,14 +30,14 @@ def _make_executor(vm=None, playbook_service=None) -> TaskExecutor:
     )
 
 
-def _make_task(source_name="prolific", task_type="survey"):
+def _make_task(source_name="betapanel", task_type="survey"):
     task = MagicMock()
     task.id = "test-task-001"
     task.title = "Complete survey"
-    task.description = "Complete the survey on prolific"
+    task.description = "Complete the survey on betapanel"
     task.source_name = source_name
     task.task_type = task_type
-    task.source_url = "https://prolific.com"
+    task.source_url = "https://betapanel.example"
     return task
 
 
@@ -47,11 +47,11 @@ class TestHandleTabTransition:
         """New tab detected -> logs transition, injects host content into messages, returns updated count."""
         vm = MagicMock()
         vm.wait_for_new_tab = AsyncMock(return_value=True)
-        vm.get_active_tab_url = AsyncMock(return_value="https://qualtrics.com/survey/123")
+        vm.get_active_tab_url = AsyncMock(return_value="https://quickform.example/survey/123")
         vm.get_tab_count = AsyncMock(return_value=2)
 
         ps = MagicMock()
-        ps.resolve.return_value = "Host instructions for qualtrics"
+        ps.resolve.return_value = "Host instructions for quickform"
 
         executor = _make_executor(vm=vm, playbook_service=ps)
         task = _make_task()
@@ -64,16 +64,16 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=5,
             pre_tab_count=1,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         assert len(step_log) == 1
         assert step_log[0]["action_type"] == "tab_switch"
-        assert step_log[0]["action_data"]["host_domain"] == "qualtrics.com"
+        assert step_log[0]["action_data"]["host_domain"] == "quickform.example"
         # Host content injected into messages
         assert len(messages) == 2
         assert "DELEGATE_TO_HOST" in messages[1]["content"]
-        assert "Host instructions for qualtrics" in messages[1]["content"]
+        assert "Host instructions for quickform" in messages[1]["content"]
         # Tab count updated
         assert updated_count == 2
 
@@ -82,7 +82,7 @@ class TestHandleTabTransition:
         """After first detection, updated count prevents repeated triggers."""
         vm = MagicMock()
         vm.wait_for_new_tab = AsyncMock(return_value=True)
-        vm.get_active_tab_url = AsyncMock(return_value="https://qualtrics.com/survey/123")
+        vm.get_active_tab_url = AsyncMock(return_value="https://quickform.example/survey/123")
         vm.get_tab_count = AsyncMock(return_value=2)
 
         ps = MagicMock()
@@ -98,7 +98,7 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=5,
             pre_tab_count=1,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         # Second call with updated count — no new tab
@@ -109,7 +109,7 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=6,
             pre_tab_count=count,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         assert count2 == count  # No change
@@ -129,7 +129,7 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=5,
             pre_tab_count=1,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         assert len(step_log) == 0
@@ -139,7 +139,7 @@ class TestHandleTabTransition:
     async def test_ignores_same_domain_tab(self):
         vm = MagicMock()
         vm.wait_for_new_tab = AsyncMock(return_value=True)
-        vm.get_active_tab_url = AsyncMock(return_value="https://prolific.com/other-page")
+        vm.get_active_tab_url = AsyncMock(return_value="https://betapanel.example/other-page")
         vm.get_tab_count = AsyncMock(return_value=2)
 
         executor = _make_executor(vm=vm)
@@ -151,7 +151,7 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=5,
             pre_tab_count=1,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         assert len(step_log) == 0
@@ -166,7 +166,7 @@ class TestHandleTabTransition:
             step_log=[],
             steps_taken=5,
             pre_tab_count=None,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
         assert result is None
 
@@ -184,7 +184,7 @@ class TestHandleTabTransition:
             step_log=step_log,
             steps_taken=5,
             pre_tab_count=1,
-            platform_domain="prolific.com",
+            platform_domain="betapanel.example",
         )
 
         assert len(step_log) == 0
@@ -201,9 +201,9 @@ class TestPlatformReturn:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        await executor._handle_platform_return("prolific.com", step_log, steps_taken=10)
+        await executor._handle_platform_return("betapanel.example", step_log, steps_taken=10)
 
-        vm.find_tab_by_domain.assert_called_once_with("prolific.com")
+        vm.find_tab_by_domain.assert_called_once_with("betapanel.example")
         vm.switch_to_tab.assert_called_once_with(1)
         assert len(step_log) == 1
         assert step_log[0]["action_type"] == "tab_switch"
@@ -217,7 +217,7 @@ class TestPlatformReturn:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        await executor._handle_platform_return("prolific.com", step_log, steps_taken=10)
+        await executor._handle_platform_return("betapanel.example", step_log, steps_taken=10)
 
         assert len(step_log) == 0  # No switch logged
 
@@ -240,12 +240,12 @@ class TestDelegateToHost:
         executor = _make_executor(playbook_service=ps)
         task = _make_task()
 
-        content = executor._load_playbook_content(task, host_domain="qualtrics.com")
+        content = executor._load_playbook_content(task, host_domain="quickform.example")
 
         assert content == "Host-specific instructions"
         ps.resolve.assert_called_once_with(
-            source_name="prolific",
-            host_domain="qualtrics.com",
+            source_name="betapanel",
+            host_domain="quickform.example",
             task_type="survey",
             flow_type="execution",
         )
@@ -269,7 +269,7 @@ class TestDelegateToHost:
         executor._load_playbook_content(_make_task())
 
         ps.resolve.assert_called_once_with(
-            source_name="prolific",
+            source_name="betapanel",
             host_domain=None,
             task_type="survey",
             flow_type="execution",
@@ -279,7 +279,7 @@ class TestDelegateToHost:
 class TestDomainExtraction:
     def test_extracts_domain_from_url(self):
         executor = _make_executor()
-        assert executor._detect_host_domain("https://qualtrics.com/survey/123") == "qualtrics.com"
+        assert executor._detect_host_domain("https://quickform.example/survey/123") == "quickform.example"
         assert executor._detect_host_domain("https://www.google.com/forms/d/abc") == "www.google.com"
 
     def test_returns_none_for_empty_url(self):

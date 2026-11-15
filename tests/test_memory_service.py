@@ -28,15 +28,15 @@ def memory_service(db):
 async def test_store_creates_new_memory_entry(memory_service):
     """store() creates a new memory entry in the database."""
     entry_id = await memory_service.store(
-        key="prolific:survey:login",
+        key="betapanel:survey:login",
         value={"summary": "Login button is top-right"},
         entry_type="cycle",
         importance=0.7,
     )
     assert entry_id
-    recalled = await memory_service.recall(key="prolific:survey:login")
+    recalled = await memory_service.recall(key="betapanel:survey:login")
     assert len(recalled) == 1
-    assert recalled[0].key == "prolific:survey:login"
+    assert recalled[0].key == "betapanel:survey:login"
     assert recalled[0].value.get("summary") == "Login button is top-right"
     assert recalled[0].entry_type == "cycle"
     assert recalled[0].importance == 0.7
@@ -46,16 +46,16 @@ async def test_store_creates_new_memory_entry(memory_service):
 async def test_store_with_existing_key_updates_entry(memory_service):
     """store() with existing key updates the entry."""
     await memory_service.store(
-        key="prolific:survey:login",
+        key="betapanel:survey:login",
         value={"summary": "Original"},
         entry_type="cycle",
     )
     entry_id = await memory_service.store(
-        key="prolific:survey:login",
+        key="betapanel:survey:login",
         value={"summary": "Updated"},
         entry_type="cycle",
     )
-    recalled = await memory_service.recall(key="prolific:survey:login")
+    recalled = await memory_service.recall(key="betapanel:survey:login")
     assert len(recalled) == 1
     assert recalled[0].value.get("summary") == "Updated"
     assert recalled[0].id == entry_id
@@ -223,7 +223,7 @@ def test_memory_entry_to_prompt_line_format():
     """MemoryEntry.to_prompt_line() produces 'From previous experience: {key}: {value}'."""
     entry = MemoryEntry(
         id="id",
-        key="prolific:survey:login",
+        key="betapanel:survey:login",
         value={"summary": "Login button is top-right"},
         entry_type="cycle",
         importance=0.5,
@@ -233,4 +233,4 @@ def test_memory_entry_to_prompt_line_format():
         expires_at=None,
     )
     line = entry.to_prompt_line()
-    assert "From previous experience: prolific:survey:login: Login button is top-right" in line
+    assert "From previous experience: betapanel:survey:login: Login button is top-right" in line
