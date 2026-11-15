@@ -112,7 +112,7 @@ class TaskDiscovery:
 
         apply_all()
 
-        from agent import ComputerAgent
+        from cua_agent import ComputerAgent
 
         vlm_config = getattr(self._settings, "vlm", None)
         vlm_model = f"mlx/{vlm_config.model}" if vlm_config else "mlx/mlx-community/UI-TARS-1.5-7B-6bit"

@@ -1,15 +1,18 @@
 exclude: '^(\.claude-flow/|\.swarm/|\.hive-mind/|\.claude/skills/)'
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.10
+    rev: v0.17.5
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ["--fix"]
+        types_or: [python, pyi]
       - id: ruff-format
+        types_or: [python, pyi]
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
         exclude: '\.(map|cjs|d\.ts|d\.cts|html)$'
       - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
         exclude: '\.(map|cjs|d\.ts|d\.cts|html)$'

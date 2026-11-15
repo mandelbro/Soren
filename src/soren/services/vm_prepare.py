@@ -7,7 +7,8 @@ import logging
 from pathlib import Path  # for type hint in config_path
 
 from soren.services.config_loader import load_settings
-from soren.services.vm_manager import LumeConnectionError, VMManager
+from soren.services.lume_client import LumeError
+from soren.services.vm_manager import VMManager
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,8 @@ async def prepare_pristine_vm(
     logger.info("Pulling base image %s as %s", base_image, pristine_name)
     try:
         await manager._client.pull_image(base_image, name=pristine_name)
-    except LumeConnectionError as e:
-        raise RuntimeError(f"Cannot pull image. Is `lume serve` running? {e}") from e
+    except LumeError as e:
+        raise RuntimeError(f"Cannot pull image {base_image}: {e}") from e
 
     # Step 2: Boot VM, wait for ready
     logger.info("Booting pristine VM %s", pristine_name)

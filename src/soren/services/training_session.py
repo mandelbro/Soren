@@ -766,7 +766,7 @@ class TrainingSession:
             # Track click-type actions specifically for retry feedback. Move,
             # scroll, and drag have coordinates too but aren't what we want to
             # warn UI-TARS away from on retry.
-            if isinstance(action_type, str) and "click" in action_type:
+            if isinstance(action_type, str) and "click" in action_type and x is not None and y is not None:
                 try:
                     self._last_click_xy = (int(x), int(y))
                 except (TypeError, ValueError):
@@ -807,7 +807,7 @@ class TrainingSession:
         from soren.patches import apply_all
 
         apply_all()
-        from agent import ComputerAgent
+        from cua_agent import ComputerAgent
 
         from soren.services.task_executor import DEFAULT_VLM_MODEL
 

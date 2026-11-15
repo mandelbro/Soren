@@ -9,7 +9,7 @@ from soren.services.training_session import TrainingCallbacks, TrainingSession, 
 
 # Patch targets: apply_all and ComputerAgent are imported lazily inside _execute_single_step.
 _PATCH_APPLY_ALL = "soren.patches.apply_all"
-_PATCH_CUA_AGENT = "agent.ComputerAgent"
+_PATCH_CUA_AGENT = "cua_agent.ComputerAgent"
 _PATCH_VERIFIER = "soren.services.training_session.TrainingSession._get_verifier"
 
 

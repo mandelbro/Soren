@@ -8,7 +8,15 @@ from rich.console import Console
 from rich.table import Table
 
 from soren.services.config_loader import load_settings
-from soren.services.vm_manager import LumeConnectionError, VMManager
+from soren.services.lume_client import LumeError
+from soren.services.vm_manager import VMManager
+
+
+def _format_memory(memory_size: object) -> str:
+    """Render Lume's ``memorySize`` (bytes) as whole or fractional GB."""
+    if not isinstance(memory_size, int | float) or isinstance(memory_size, bool):
+        return "\u2014"
+    return f"{memory_size / 1024**3:g} GB"
 
 
 @click.group()
@@ -26,7 +34,7 @@ def vm_prepare(config):
         try:
             await prepare_pristine_vm(config_path=Path(config) if config else None)
             click.echo("Pristine VM prepared successfully.")
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
         except RuntimeError as e:
@@ -54,12 +62,12 @@ def vm_status(config):
             for vm in vms:
                 name = vm.get("name", "\u2014")
                 status = vm.get("status", "\u2014")
-                memory = vm.get("memory", "\u2014")
-                vnc = vm.get("vncUrl", "\u2014")
+                memory = _format_memory(vm.get("memorySize"))
+                vnc = vm.get("vncUrl") or "\u2014"
                 table.add_row(str(name), str(status), str(memory), str(vnc))
             console = Console()
             console.print(table)
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
 
@@ -81,7 +89,7 @@ def vm_stop(config):
                 return
             await manager.stop()
             click.echo("VM stopped.")
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
 
@@ -107,7 +115,7 @@ def vm_reset(config):
                     console.print(f"  [yellow]Warning:[/yellow] {w}")
             if not result.success:
                 raise SystemExit(1)
-        except LumeConnectionError as e:
+        except LumeError as e:
             click.echo(str(e), err=True)
             raise SystemExit(1)
 
