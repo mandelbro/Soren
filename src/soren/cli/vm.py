@@ -8,7 +8,8 @@ from rich.console import Console
 from rich.table import Table
 
 from soren.services.config_loader import load_settings
-from soren.services.vm_manager import LumeConnectionError, VMManager
+from soren.services.lume_client import LumeConnectionError
+from soren.services.vm_manager import VMManager
 
 
 @click.group()

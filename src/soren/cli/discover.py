@@ -22,10 +22,11 @@ def discover_refresh(persona, config):
     from soren.adapters import get_adapter
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
+    from soren.services.lume_client import LumeConnectionError
     from soren.services.persona_loader import get_personas_dir, load_all
     from soren.services.task_backlog import TaskBacklog, get_default_db_path
     from soren.services.task_discovery import TaskDiscovery
-    from soren.services.vm_manager import LumeConnectionError, VMManager
+    from soren.services.vm_manager import VMManager
 
     settings = load_settings(Path(config) if config else None)
     personas = load_all(get_personas_dir())

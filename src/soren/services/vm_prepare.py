@@ -7,7 +7,8 @@ import logging
 from pathlib import Path  # for type hint in config_path
 
 from soren.services.config_loader import load_settings
-from soren.services.vm_manager import LumeConnectionError, VMManager
+from soren.services.lume_client import LumeConnectionError
+from soren.services.vm_manager import VMManager
 
 logger = logging.getLogger(__name__)
 

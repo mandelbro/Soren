@@ -8,7 +8,8 @@ import httpx
 import pytest
 
 from soren.models.vm import VMConfig
-from soren.services.vm_manager import LumeClient, LumeConnectionError, VMManager
+from soren.services.lume_client import LumeClient, LumeConnectionError
+from soren.services.vm_manager import VMManager
 
 # --- LumeClient tests ---
 
@@ -31,7 +32,7 @@ async def test_lume_client_list_vms_constructs_request():
 @pytest.mark.asyncio
 async def test_lume_client_connection_refused_clear_error():
     """LumeClient handles connection refused with clear error message."""
-    with patch("soren.services.vm_manager.httpx.AsyncClient") as mock_client_cls:
+    with patch("soren.services.lume_client.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
         mock_client.__aenter__.return_value = mock_client
