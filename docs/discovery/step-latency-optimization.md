@@ -334,7 +334,7 @@ The CUA agent (UI-TARS) decides *what* to click and type, but it does not contro
             → Safari receives keyboard/mouse event
 ```
 
-The VLM does not introduce mouse jitter, variable typing speed, realistic pauses, or cursor movement paths. It sends the same instantaneous `type_text("https://sproutful.com")` call that a direct executor would. If anything, VLM-driven actions can be *more* suspicious — the model produces pixel-perfect coordinate clicks with zero preceding mouse movement, which is a known bot fingerprint.
+The VLM does not introduce mouse jitter, variable typing speed, realistic pauses, or cursor movement paths. It sends the same instantaneous `type_text("https://acmepanel.example")` call that a direct executor would. If anything, VLM-driven actions can be *more* suspicious — the model produces pixel-perfect coordinate clicks with zero preceding mouse movement, which is a known bot fingerprint.
 
 ### What Actually Matters for Bot Detection
 

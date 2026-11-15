@@ -1,6 +1,6 @@
 # Base Playbook: Email Reply
 # Ships with Soren. Provides generic email reply patterns that apply
-# across all webmail providers (Gmail, Outlook, Yahoo Mail, ProtonMail, etc.).
+# across all webmail providers.
 # Host-specific and site-specific playbooks override these when available.
 
 task_type: email_reply

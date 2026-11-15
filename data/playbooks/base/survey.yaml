@@ -1,6 +1,6 @@
 # Base Playbook: Survey
 # Ships with Soren. Provides generic survey-completion patterns that apply
-# across all survey hosts (Qualtrics, SurveyMonkey, Google Forms, Typeform, etc.).
+# across all survey hosts.
 # Host-specific and site-specific playbooks override these when available.
 
 task_type: survey
@@ -139,7 +139,7 @@ patterns:
       - "Response submitted successfully"
     completion_codes:
       description: >
-        Many survey platforms (especially Prolific, MTurk) display a
+        Many survey platforms (especially research panels) display a
         completion code after the survey. This code must be copied and
         entered back on the platform to receive payment.
       identification:

@@ -159,7 +159,7 @@ class TestAutoVerifyPassRecordsStep:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -197,7 +197,7 @@ class TestAutoVerifyFailRetries:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=3,
         )
@@ -262,9 +262,9 @@ class TestAutoNavigateViaKeyboard:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="sproutful",
+            source_name="acmepanel",
             flow_type="login",
-            source_url="https://sproutful.com",
+            source_url="https://acmepanel.example",
         )
 
         with patch(_PATCH_APPLY_ALL), patch(_PATCH_CUA_AGENT):
@@ -272,11 +272,11 @@ class TestAutoNavigateViaKeyboard:
 
         # Must see these three calls in this exact order
         assert "hotkey:cmd+l" in call_order, f"Expected hotkey:cmd+l in {call_order}"
-        assert "type_text:https://sproutful.com" in call_order, f"Expected type_text in {call_order}"
+        assert "type_text:https://acmepanel.example" in call_order, f"Expected type_text in {call_order}"
         assert "press_key:return" in call_order, f"Expected press_key:return in {call_order}"
 
         hotkey_idx = call_order.index("hotkey:cmd+l")
-        type_idx = call_order.index("type_text:https://sproutful.com")
+        type_idx = call_order.index("type_text:https://acmepanel.example")
         return_idx = call_order.index("press_key:return")
         assert hotkey_idx < type_idx < return_idx, (
             f"Expected Cmd+L -> type URL -> Return in that order; got {call_order}"
@@ -305,9 +305,9 @@ class TestAutoNavigateViaKeyboard:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="sproutful",
+            source_name="acmepanel",
             flow_type="login",
-            source_url="https://sproutful.com",
+            source_url="https://acmepanel.example",
         )
 
         with (
@@ -322,7 +322,7 @@ class TestAutoNavigateViaKeyboard:
         nav_calls = [
             call
             for call in mock_step.call_args_list
-            if call.args and isinstance(call.args[0], str) and "sproutful.com" in call.args[0]
+            if call.args and isinstance(call.args[0], str) and "acmepanel.example" in call.args[0]
         ]
         assert not nav_calls, f"Navigation must not route through UI-TARS / _execute_single_step; got {nav_calls}"
         # ComputerAgent must not have been constructed for navigation either
@@ -358,9 +358,9 @@ class TestAutoNavigateViaKeyboard:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="sproutful",
+            source_name="acmepanel",
             flow_type="login",
-            source_url="https://sproutful.com",
+            source_url="https://acmepanel.example",
         )
 
         # Patch asyncio.sleep on the training_session module so we can see
@@ -403,7 +403,7 @@ class TestAutoNavigateViaKeyboard:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="sproutful",
+            source_name="acmepanel",
             flow_type="login",
             # source_url omitted — default ""
         )
@@ -437,7 +437,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=3,
         )
@@ -506,7 +506,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=3,
         )
@@ -538,7 +538,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
 
         Ground-truth screenshot showed UI-TARS was clicking at y~85 (inside
         Safari's toolbar) when the real target was at y~115 (inside the
-        Sproutful page header). The model conflates 'top of screen' with
+        Acme Panel page header). The model conflates 'top of screen' with
         'page header', and needs an explicit chrome boundary to break the
         conflation — but only when it's actually seeing the chrome.
         """
@@ -554,7 +554,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -599,7 +599,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -642,7 +642,7 @@ class TestRetryInstructionIncludesVerifierFeedback:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=3,
         )
@@ -687,7 +687,7 @@ class TestRetriesExhaustedHumanSkip:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=3,
         )
@@ -727,7 +727,7 @@ class TestRetriesExhaustedHumanAccept:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=2,
         )
@@ -765,7 +765,7 @@ class TestRetriesExhaustedHumanAbort:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
             max_verify_retries=1,
         )
@@ -805,7 +805,7 @@ class TestThreeStepsVerifiedAndSaved:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -845,7 +845,7 @@ class TestSlashCommandsStillWork:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -867,7 +867,7 @@ class TestSlashCommandsStillWork:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -895,7 +895,7 @@ class TestSlashCommandsStillWork:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -928,7 +928,7 @@ class TestSlashCommandsStillWork:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -950,8 +950,8 @@ class TestPrereqReplayRunsLoginForDiscovery:
             steps=[PlaybookStep(seq=1, instruction="Click login btn", expected_after="Logged in")],
         )
         site = SitePlaybook(
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flows=SiteFlows(login=login_flow),
         )
         ps.load_site = MagicMock(return_value=site)
@@ -961,7 +961,7 @@ class TestPrereqReplayRunsLoginForDiscovery:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="discovery",
         )
 
@@ -986,7 +986,7 @@ class TestPrereqReplaySkippedForLogin:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -1021,7 +1021,7 @@ class TestErrorDuringCuaOffersRetry:
             playbook_service=ps,
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -1152,7 +1152,7 @@ class TestExecuteSingleStepConsumesFullGenerator:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -1190,7 +1190,7 @@ class TestExecuteSingleStepConsumesFullGenerator:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 
@@ -1237,7 +1237,7 @@ class TestExecuteSingleStepConsumesFullGenerator:
             playbook_service=_mock_playbook_service(),
             llm=_mock_llm(),
             callbacks=cb,
-            source_name="prolific",
+            source_name="betapanel",
             flow_type="login",
         )
 

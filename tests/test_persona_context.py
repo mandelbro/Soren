@@ -25,7 +25,7 @@ def _make_persona(
 def _make_task(
     description: str = "Complete the survey",
     task_type: str = "survey",
-    source_name: str = "Survey Junkie",
+    source_name: str = "Delta Panel",
 ) -> Task:
     """Create a Task with optional overrides."""
     return Task(

@@ -34,8 +34,8 @@ async def test_insert_single_task_with_provider_id(backlog):
     tasks = [
         DiscoveredTask(
             title="Survey A",
-            source_name="prolific",
-            source_url="https://prolific.co",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             provider_task_id="PID-123",
             persona_id="researcher",
         )
@@ -52,8 +52,8 @@ async def test_insert_single_task_without_provider_id(backlog):
     tasks = [
         DiscoveredTask(
             title="Survey B",
-            source_name="prolific",
-            source_url="https://prolific.co",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             persona_id="researcher",
             snippet="Short description",
         )
@@ -69,8 +69,8 @@ async def test_insert_duplicate_silently_skipped(backlog):
     tasks = [
         DiscoveredTask(
             title="Dup Survey",
-            source_name="prolific",
-            source_url="https://prolific.co",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             provider_task_id="DUP-1",
             persona_id="researcher",
         )
@@ -86,8 +86,8 @@ async def test_insert_duplicate_silently_skipped(backlog):
 async def test_batch_insert_with_duplicates(backlog):
     """Batch insert of 5 tasks with 2 duplicates → 3 inserted, 2 skipped."""
     base = DiscoveredTask(
-        source_name="prolific",
-        source_url="https://prolific.co",
+        source_name="betapanel",
+        source_url="https://betapanel.example",
         persona_id="researcher",
     )
     tasks = [
@@ -346,7 +346,7 @@ async def test_get_summary_returns_correct_counts(backlog):
 def test_build_dedup_key_primary_uses_provider_id():
     """Primary dedup key uses provider_task_id when present."""
     key = build_dedup_key(
-        source_name="prolific",
+        source_name="betapanel",
         persona_id="r1",
         task_type="survey",
         source_url="https://x.co",
@@ -355,7 +355,7 @@ def test_build_dedup_key_primary_uses_provider_id():
         stable_metadata="m",
         provider_task_id="PID-99",
     )
-    assert key == "prolific:PID-99:r1"
+    assert key == "betapanel:PID-99:r1"
 
 
 def test_build_dedup_key_fallback_deterministic():

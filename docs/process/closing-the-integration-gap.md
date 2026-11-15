@@ -67,7 +67,7 @@ The discovery document explicitly says:
 
 Phase 3 was built and deployed as if it were the primary mode. The autonomous-first design from Phase 2 was not yet exercised. The result is a "fallback" that became the only mode, built without the context of what it was supposed to fall back *from*.
 
-If anyone had asked "can I use this training feature to train a login flow for Sproutful right now?" before marking the tasks complete, the answer would have been "no, because it doesn't know the credentials and it doesn't know the URL." That question was never asked.
+If anyone had asked "can I use this training feature to train a login flow for Acme Panel right now?" before marking the tasks complete, the answer would have been "no, because it doesn't know the credentials and it doesn't know the URL." That question was never asked.
 
 ### 4. Session context loss across the implementation timeline
 
@@ -123,8 +123,8 @@ Integration blindness manifests when:
 
 ### End-to-End Smoke Test
 - Describe one concrete scenario that exercises the feature end-to-end.
-  (example: "Train a Sproutful login flow using the researcher persona's
-  stored credentials, starting from `soren train run sproutful --flow login`")
+  (example: "Train a Acme Panel login flow using the researcher persona's
+  stored credentials, starting from `soren train run acmepanel --flow login`")
 - If the feature cannot support this scenario, what's missing?
 ```
 
@@ -142,10 +142,10 @@ This section should be written by the discovery author (Norwood) and reviewed by
 - [ ] Callback-based I/O for testability
 
 **Outcome criteria (new, mandatory for tasks > 3 points):**
-- [ ] A training session for source "sproutful" resolves credentials from
+- [ ] A training session for source "acmepanel" resolves credentials from
       the researcher persona's credential_ref
 - [ ] A failed step's error context is available to the retry instruction
-- [ ] Running `soren train run sproutful --flow login` from a cold start
+- [ ] Running `soren train run acmepanel --flow login` from a cold start
       produces a saved login flow playbook without manual workarounds
 ```
 
@@ -182,7 +182,7 @@ This is a 5-minute review that catches "you're about to build TrainingSession wi
 
 **Proposed addition**: After completing all tasks in a phase, run the end-to-end smoke test from the discovery's "Integration Requirements" section. Not a unit test — a real attempt to use the feature for its stated purpose.
 
-For the training system, this would have been: "Run `soren train run sproutful --flow login` with the researcher persona configured. Can you complete a login training? If not, what's missing?"
+For the training system, this would have been: "Run `soren train run acmepanel --flow login` with the researcher persona configured. Can you complete a login training? If not, what's missing?"
 
 This smoke test would have revealed immediately: no credentials, no auto-navigate, no cross-step context. It would have revealed these before the week of debugging, not after.
 

@@ -26,7 +26,7 @@ Post-Phase 6 enhancement -- extends playbook self-improvement system with autono
 
 ### What Is Happening
 
-On the last Soren production run, the CUA agent loaded the task source URL (Sproutful) but failed to locate the login link. The agent exhausted its 30-step discovery budget probing the page without successfully authenticating.
+On the last Soren production run, the CUA agent loaded the task source URL (Acme Panel) but failed to locate the login link. The agent exhausted its 30-step discovery budget probing the page without successfully authenticating.
 
 The root cause is visible across all three adapters (`survey_platform.py`, `email_adapter.py`, `generic_form.py`). Every adapter uses the same generic instructions:
 
@@ -37,11 +37,11 @@ The root cause is visible across all three adapters (`survey_platform.py`, `emai
 
 This tells the agent *what* to do but gives it zero information about *where* or *how*. The problem manifests at three distinct points in the lifecycle:
 
-**Login**: Each site has a unique login flow -- Sproutful has a "Log in" link in a nav bar that opens a modal, Prolific redirects to an email-first/password-second flow, Gmail uses multi-page OAuth. The agent has no prior knowledge of these flows.
+**Login**: Each site has a unique login flow -- Acme Panel has a "Log in" link in a nav bar that opens a modal, Beta Panel redirects to an email-first/password-second flow, Acme Mail uses multi-page OAuth. The agent has no prior knowledge of these flows.
 
 **Task Discovery**: After logging in, the agent needs to know WHERE the task list is. Different platforms organize dashboards differently -- which nav item, which tab, does it need to scroll to load lazy content.
 
-**Task Execution**: Once a task is selected, it often **opens in a new browser tab or window** with a completely different interface. A survey on Sproutful might redirect to a Qualtrics form at `qualtrics.com/jfe/form/SV_xxx`, while a Prolific survey might open a Google Forms page. The agent must handle tab switching, unfamiliar host UIs, and returning to the platform afterward.
+**Task Execution**: Once a task is selected, it often **opens in a new browser tab or window** with a completely different interface. A survey on Acme Panel might redirect to a QuickForm form at `quickform.example/jfe/form/SV_xxx`, while a Beta Panel survey might open a PollBox page. The agent must handle tab switching, unfamiliar host UIs, and returning to the platform afterward.
 
 ### Why the Generic Approach Fails
 
@@ -60,8 +60,8 @@ An **autonomous-first learning system** with three capabilities:
 This is supported by a **cascading playbook hierarchy** that separates common patterns from site-specific knowledge:
 
 - **Base playbooks** (built-in): generic task-type rules (e.g., "survey" patterns)
-- **Host playbooks** (learned): host-specific rules (e.g., Qualtrics navigation patterns)
-- **Site playbooks** (per-source): source-specific rules (e.g., Sproutful's login modal)
+- **Host playbooks** (learned): host-specific rules (e.g., QuickForm navigation patterns)
+- **Site playbooks** (per-source): source-specific rules (e.g., Acme Panel's login modal)
 
 ---
 
@@ -108,9 +108,9 @@ This is supported by a **cascading playbook hierarchy** that separates common pa
 
 Survey platforms act as intermediaries. The typical flow is:
 
-1. **Login + Discovery** happen on the survey *platform* (e.g., Sproutful at `sproutful.com`)
-2. User clicks "Start Study" and the survey **opens in a new browser tab** at a completely different domain (e.g., `qualtrics.com/jfe/form/SV_xxx`)
-3. The survey UI belongs to the survey *host* (Qualtrics, SurveyMonkey, Google Forms, Typeform)
+1. **Login + Discovery** happen on the survey *platform* (e.g., Acme Panel at `acmepanel.example`)
+2. User clicks "Start Study" and the survey **opens in a new browser tab** at a completely different domain (e.g., `quickform.example/jfe/form/SV_xxx`)
+3. The survey UI belongs to the survey *host* (for example QuickForm or PollBox)
 4. After completion, the user must **return to the platform tab** to confirm submission
 
 The current architecture assumes all execution happens on a single page. Nothing in `TaskExecutor` or the CUA agent handles tab/window transitions.
@@ -136,7 +136,7 @@ The current architecture assumes all execution happens on a single page. Nothing
 5. After completion, switch back to platform tab via `find_tab_by_domain()`
 6. Confirm submission on platform
 
-When a new tab opens at `qualtrics.com`, the resolver checks `data/playbooks/host/qualtrics.yaml`, falls back to `data/playbooks/base/survey.yaml`, and combines both with the site playbook's execution flow.
+When a new tab opens at `quickform.example`, the resolver checks `data/playbooks/host/quickform.yaml`, falls back to `data/playbooks/base/survey.yaml`, and combines both with the site playbook's execution flow.
 
 ### What the Site Playbook Execution Flow Records
 
@@ -153,8 +153,8 @@ Instead of training every single survey site from scratch, separate knowledge in
 | Layer | Location | Authored By | Scope | Example |
 |-------|----------|-------------|-------|---------|
 | **Base** | `data/playbooks/base/<task_type>.yaml` | Ships with Soren | All surveys, all hosts | "Look for Next/Continue buttons, radio buttons, text areas, Submit" |
-| **Host** | `data/playbooks/host/<host>.yaml` | Auto-learned or trained | All surveys on one host | "Qualtrics: progress bar at top, arrow for next, specific question layouts" |
-| **Site** | `data/playbooks/site/<source>.yaml` | Per-source trained | One platform's flows | "Sproutful: click 'Start Study', confirm completion after return" |
+| **Host** | `data/playbooks/host/<host>.yaml` | Auto-learned or trained | All surveys on one host | "QuickForm: progress bar at top, arrow for next, specific question layouts" |
+| **Site** | `data/playbooks/site/<source>.yaml` | Per-source trained | One platform's flows | "Acme Panel: click 'Start Study', confirm completion after return" |
 
 ### Resolution Order
 
@@ -170,7 +170,7 @@ Layers do not merge step-by-step. The full text of each layer is included with c
 
 ### Host Playbook Example (Auto-Learned)
 
-`data/playbooks/host/qualtrics.yaml` -- `host_domain: qualtrics.com`, `url_patterns: ["qualtrics.com/jfe/form/*"]`, navigation overrides (blue arrow buttons, thin progress bar at top), and quirks (animation delays, matrix scrolling). `learned_from: auto|human`.
+`data/playbooks/host/quickform.yaml` -- `host_domain: quickform.example`, `url_patterns: ["quickform.example/jfe/form/*"]`, navigation overrides (blue arrow buttons, thin progress bar at top), and quirks (animation delays, matrix scrolling). `learned_from: auto|human`.
 
 ### Updated Data Model
 
@@ -258,9 +258,9 @@ A site playbook is a structured YAML file containing step-by-step instructions f
 ### 6.2 Site Playbook Data Model
 
 ```yaml
-# data/playbooks/site/sproutful.yaml
-source_name: sproutful
-source_url: https://sproutful.com/home
+# data/playbooks/site/acmepanel.yaml
+source_name: acmepanel
+source_url: https://acmepanel.example/home
 version: 1
 
 flows:
@@ -290,9 +290,9 @@ flows:
       completion_indicator: "Completion confirmation shown"
       steps:
         - {seq: 1, instruction: "Click 'Start Study'", expected_after: "New tab opens",
-           triggers_new_tab: true, host_domain: "qualtrics.com"}
+           triggers_new_tab: true, host_domain: "quickform.example"}
         - {seq: 2, instruction: "DELEGATE_TO_HOST", expected_after: "Survey complete in tab"}
-        - {seq: 3, instruction: "Switch to Sproutful tab", expected_after: "Dashboard visible",
+        - {seq: 3, instruction: "Switch to Acme Panel tab", expected_after: "Dashboard visible",
            returns_to_platform: true}
         - {seq: 4, instruction: "Click 'Confirm'", expected_after: "Marked complete"}
 ```
@@ -590,7 +590,7 @@ RESOLVE PLAYBOOKS → AUTONOMOUS ATTEMPT (with StuckDetector monitoring)
 
 #### Journey A: First-Time Source Setup
 
-User adds a new source and runs `soren cycle run`. No site playbooks exist, so autonomous attempt with base playbooks. When login gets stuck (same screen x3), output shows what was tried and offers `[t] Train / [s] Skip / [a] Abort`. After training (5 steps recorded), discovery succeeds autonomously (auto-saves playbook), execution completes on qualtrics.com (auto-saves host playbook). Summary: "1 task done, 3 playbooks created."
+User adds a new source and runs `soren cycle run`. No site playbooks exist, so autonomous attempt with base playbooks. When login gets stuck (same screen x3), output shows what was tried and offers `[t] Train / [s] Skip / [a] Abort`. After training (5 steps recorded), discovery succeeds autonomously (auto-saves playbook), execution completes on quickform.example (auto-saves host playbook). Summary: "1 task done, 3 playbooks created."
 
 Key UX decisions: agent shows what it tried before asking for help; training inherits browser state; successful autonomous flows generate playbooks silently; summary calls out playbook creation.
 
@@ -604,7 +604,7 @@ When a site changes its flow and the playbook fails, the system shows the expect
 
 #### Journey D: Multi-Tab Survey Execution
 
-Tab transitions render as nested trees in the output: `Execute > "Start Study" -> new tab: qualtrics.com > host playbook (15 steps) > return to sproutful.com > confirm`. Tab detection uses `VMManager.get_tab_count()`, `DELEGATE_TO_HOST` triggers host playbook resolution, and return uses domain matching (not tab index).
+Tab transitions render as nested trees in the output: `Execute > "Start Study" -> new tab: quickform.example > host playbook (15 steps) > return to acmepanel.example > confirm`. Tab detection uses `VMManager.get_tab_count()`, `DELEGATE_TO_HOST` triggers host playbook resolution, and return uses domain matching (not tab index).
 
 #### Journey E: Playbook Management
 
@@ -696,7 +696,7 @@ Byte-level comparison is the fast path (VNC produces deterministic PNGs for iden
 ## 13. Open Questions
 
 1. **Multi-factor authentication**: Should training mode pause for human 2FA entry, then resume recording?
-2. **Playbook history**: Should old playbooks be archived (`sproutful.v1.yaml`) or overwritten on site changes?
+2. **Playbook history**: Should old playbooks be archived (`acmepanel.v1.yaml`) or overwritten on site changes?
 3. **Multiple login flows per source**: Should playbooks support alternative login flows (email/password vs. social)?
 4. **Host playbook sharing**: Can auto-learned host playbooks be shared across Soren instances via a registry?
 5. **Stuck detection tuning**: `same_screen_threshold` and `loop_detection_window` need empirical tuning per site type.
@@ -707,7 +707,7 @@ Byte-level comparison is the fast path (VNC produces deterministic PNGs for iden
 
 | Metric | Current | Target | How Measured |
 |--------|---------|--------|-------------|
-| Login success rate (Sproutful) | 0% | >90% | Cycle reports: Phase 1 nav completes within 10 steps |
+| Login success rate (Acme Panel) | 0% | >90% | Cycle reports: Phase 1 nav completes within 10 steps |
 | Discovery success rate | ~60-75% | >85% | Cycle reports: tasks discovered per run |
 | Task execution success rate | ~50-65% | >80% | Cycle reports: tasks completed per run |
 | Autonomous first-attempt success | N/A | >50% | Cycle reports: success without human-trained playbook |
@@ -807,7 +807,7 @@ Credential placeholders could leak into `instruction` or `expected_after` fields
 
 ### Simplification Opportunities
 
-**SIMP1. Collapse host+base into "shared" tier for Phase 1.** Ship two tiers (site + shared) instead of three. Shared playbooks keyed by "qualtrics" or "survey" avoid URL pattern matching and host detection. Split into host + base in Phase 4 when multi-tab lands. Saves ~3-5 points.
+**SIMP1. Collapse host+base into "shared" tier for Phase 1.** Ship two tiers (site + shared) instead of three. Shared playbooks keyed by "quickform" or "survey" avoid URL pattern matching and host detection. Split into host + base in Phase 4 when multi-tab lands. Saves ~3-5 points.
 
 **SIMP2. Defer `soren train verify` to Phase 4+.** Autonomous replay verification is nice-to-have. Priority is recording and using playbooks. Saves ~2 points from Phase 3.
 

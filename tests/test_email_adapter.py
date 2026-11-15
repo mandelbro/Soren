@@ -7,7 +7,7 @@ from soren.models.task_source import TaskSource
 
 
 def _source(url: str = "https://mail.google.com") -> TaskSource:
-    return TaskSource(name="gmail", type="email", url=url)
+    return TaskSource(name="acmemail", type="email", url=url)
 
 
 def _persona() -> Persona:

@@ -14,7 +14,7 @@ Accepted
 
 ## Prior Work
 
-`docs/discovery/autonomous-learning-system.md` designed the cascading playbook hierarchy, training session state machine, and auto-learning loop. Most of that infrastructure was implemented. This document addresses gaps that emerged during real-world training on the Sproutful survey platform -- problems the original discovery did not anticipate because they only surface under live VLM execution -- AND reconnects the autonomous-first learning loop (original Section 5) that was deprioritized during initial implementation.
+`docs/discovery/autonomous-learning-system.md` designed the cascading playbook hierarchy, training session state machine, and auto-learning loop. Most of that infrastructure was implemented. This document addresses gaps that emerged during real-world training on the Acme Panel survey platform -- problems the original discovery did not anticipate because they only surface under live VLM execution -- AND reconnects the autonomous-first learning loop (original Section 5) that was deprioritized during initial implementation.
 
 ## RFC Reference
 
@@ -26,16 +26,16 @@ Accepted
 
 ### What the Learning System Should Do
 
-After a human trains Soren on a service (Sproutful, Prolific, etc.), the agent should be able to accept high-level instructions like "Search for available surveys and complete the first three" and execute them autonomously. Training captures the *how* -- how to log in, how to navigate to surveys, how to handle each step of a survey flow. The playbook serves as institutional knowledge that persists across sessions and personas.
+After a human trains Soren on a service (Acme Panel, Beta Panel, etc.), the agent should be able to accept high-level instructions like "Search for available surveys and complete the first three" and execute them autonomously. Training captures the *how* -- how to log in, how to navigate to surveys, how to handle each step of a survey flow. The playbook serves as institutional knowledge that persists across sessions and personas.
 
 Critically, the agent should also be able to learn WITHOUT human training. The original discovery (Section 5) specifies an autonomous-first loop: attempt autonomous execution, detect when stuck, reason about failure, try a different approach, and -- on success -- auto-generate a playbook. Human training is the FALLBACK, not the primary path. The current system has the building blocks (`StuckDetector`, `auto_playbook.py`, `execute_with_learning`) but they are not wired into a reasoning-based retry or autonomous exploration flow.
 
 ### What Actually Happens
 
-During a Sproutful login training session, two critical failures revealed systemic gaps:
+During a Acme Panel login training session, two critical failures revealed systemic gaps:
 
 **Failure 1: Credential Resolution Is Missing**
-The instruction "Type the email stored in the user credentials for sproutful" was passed verbatim to UI-TARS. `TrainingSession` has no access to `CredentialStore` and no mechanism to resolve credential references into actual values. UI-TARS received a natural language description of a credential rather than the credential itself, so it had nothing to type. The model thrashed, clicking randomly for 10 iterations per step.
+The instruction "Type the email stored in the user credentials for acmepanel" was passed verbatim to UI-TARS. `TrainingSession` has no access to `CredentialStore` and no mechanism to resolve credential references into actual values. UI-TARS received a natural language description of a credential rather than the credential itself, so it had nothing to type. The model thrashed, clicking randomly for 10 iterations per step.
 
 Contrast with `TaskExecutor` (lines 426-466 of `task_executor.py`), which builds a credential handoff string containing the actual username/password and injects it into the agent's context via `PersonaContext`. Training mode has none of this wiring.
 
@@ -99,7 +99,7 @@ The crop value is environment-only. The `services:` key in `config/settings.yaml
 
 ### Service Configuration Gap
 
-`TaskSource` (in `models/task_source.py`) defines per-source settings: `name`, `type`, `url`, `credential_ref`, `typing_delay_ms`, `action_delay_ms`, `cooldown_between_tasks_s`, `enabled`. It is embedded in `Persona.task_sources`. There is no standalone "service" concept. The same service (Sproutful) must be duplicated across every persona that uses it, with only `credential_ref` differing.
+`TaskSource` (in `models/task_source.py`) defines per-source settings: `name`, `type`, `url`, `credential_ref`, `typing_delay_ms`, `action_delay_ms`, `cooldown_between_tasks_s`, `enabled`. It is embedded in `Persona.task_sources`. There is no standalone "service" concept. The same service (Acme Panel) must be duplicated across every persona that uses it, with only `credential_ref` differing.
 
 The `services:` key in `settings.yaml` provides a different kind of per-service override (currently just `enter_key_behavior`). These two configuration surfaces are disconnected.
 
@@ -201,7 +201,7 @@ After a training flow completes, the LLM generates an application-level summary 
 ```yaml
 # Added to SitePlaybook or Service model
 application_context:
-  description: "Sproutful is a survey platform. The main page has a navigation bar with Log in/Sign up buttons. Login opens a modal with email-first, then password fields."
+  description: "Acme Panel is a survey platform. The main page has a navigation bar with Log in/Sign up buttons. Login opens a modal with email-first, then password fields."
   ui_patterns:
     - "Modal dialogs for authentication"
     - "Tab-based navigation for Studies/Profile/Settings"
@@ -224,7 +224,7 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 **Technical gap:** No `Service` model exists. `TaskSource` conflates service definition with persona binding.
 
-**Proposed solution:** New `Service` and `ServiceConfig` Pydantic models. `ServiceConfig` holds `chrome_crop_y`, `enter_key_behavior`, `typing_delay_ms`, `action_delay_ms`, `step_budget`, `cooldown_between_tasks_s`. `TaskSource` gains optional `service: str` field -- backward compatible. Persona binding simplified to `{service: sproutful, credential_ref: sproutful, enabled: true}`.
+**Proposed solution:** New `Service` and `ServiceConfig` Pydantic models. `ServiceConfig` holds `chrome_crop_y`, `enter_key_behavior`, `typing_delay_ms`, `action_delay_ms`, `step_budget`, `cooldown_between_tasks_s`. `TaskSource` gains optional `service: str` field -- backward compatible. Persona binding simplified to `{service: acmepanel, credential_ref: acmepanel, enabled: true}`.
 
 **Impact if not fixed:** Every new persona duplicates service config. Changing a service URL requires editing every persona file.
 
@@ -244,7 +244,7 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 **Current behavior:** If a task's service has no playbook, the agent proceeds with generic instructions and frequently fails. There is no "exploration" entry point that combines goal-oriented execution with auto-playbook generation on success.
 
-**Desired behavior:** When encountering a service with no playbook, the agent receives a goal ("learn to log in on sproutful"), a URL, and credentials. It navigates, observes, reasons, acts. On success, auto-generates a playbook via `auto_playbook.py`. On stuck after reasoning retry, falls back to training mode. This is the autonomous-first loop from original discovery Section 5.
+**Desired behavior:** When encountering a service with no playbook, the agent receives a goal ("learn to log in on acmepanel"), a URL, and credentials. It navigates, observes, reasons, acts. On success, auto-generates a playbook via `auto_playbook.py`. On stuck after reasoning retry, falls back to training mode. This is the autonomous-first loop from original discovery Section 5.
 
 **Technical gap:** No `autonomous_explore()` method exists. The meta-agent does not distinguish "no playbook" from "playbook failed." `auto_generate_site_playbook()` is never called from the production execution path.
 
@@ -335,15 +335,15 @@ A human would assume: "The agent can be pointed at a website it has never seen b
 
 ### End-to-End Smoke Test
 
-Run `soren cycle run` with the researcher persona configured for sproutful, no prior playbook. Confirm the agent autonomously navigates to sproutful.com, discovers the login flow, enters credentials, and either succeeds (generating a playbook) or detects it's stuck and offers training mode.
+Run `soren cycle run` with the example persona enabled and configured for acmepanel, no prior playbook. Confirm the agent autonomously navigates to acmepanel.example, discovers the login flow, enters credentials, and either succeeds (generating a playbook) or detects it's stuck and offers training mode.
 
 **Specific verification steps:**
-1. Delete `data/playbooks/site/sproutful.yaml` if it exists
-2. Ensure `config/services/sproutful.yaml` has the correct URL and chrome crop
-3. Ensure the researcher persona has `credential_ref: sproutful` and valid encrypted credentials
-4. Run `soren cycle run --persona researcher --max-cycles 1`
-5. Observe: the agent should attempt autonomous exploration of sproutful.com
-6. If the agent succeeds at logging in: `data/playbooks/site/sproutful.yaml` should contain a login flow with `verified_by: auto` and `confidence > 0`
+1. Delete `data/playbooks/site/acmepanel.yaml` if it exists
+2. Ensure `config/services/acmepanel.yaml` has the correct URL and chrome crop
+3. Ensure the example persona has `credential_ref: acmepanel` and valid encrypted credentials
+4. Run `soren cycle run --persona example --max-cycles 1`
+5. Observe: the agent should attempt autonomous exploration of acmepanel.example
+6. If the agent succeeds at logging in: `data/playbooks/site/acmepanel.yaml` should contain a login flow with `verified_by: auto` and `confidence > 0`
 7. If the agent gets stuck: logs should show reasoning-based retry ("Why might this have failed?") before offering training mode
 8. If training mode is offered and completed: the resulting playbook should have resolved credentials (actual values, not "the email stored in credentials")
 

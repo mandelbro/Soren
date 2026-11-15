@@ -9,14 +9,14 @@ from soren.models.host_playbook import BasePlaybook, HostPlaybook
 class TestHostPlaybook:
     def test_full_construction(self):
         hp = HostPlaybook(
-            host_domain="qualtrics.com",
-            url_patterns=["*qualtrics.com/jfe/form/*"],
+            host_domain="quickform.example",
+            url_patterns=["*quickform.example/jfe/form/*"],
             learned_from="human",
             navigation={"cookie_selector": "#onetrust-accept"},
             quirks=["animation delay after each page"],
             confidence=0.9,
         )
-        assert hp.host_domain == "qualtrics.com"
+        assert hp.host_domain == "quickform.example"
         assert hp.learned_from == "human"
         assert len(hp.quirks) == 1
 
@@ -30,17 +30,17 @@ class TestHostPlaybook:
 
     def test_matches_url_positive(self):
         hp = HostPlaybook(
-            host_domain="qualtrics.com",
-            url_patterns=["*qualtrics.com/jfe/form/*", "*qualtrics.com/SE/*"],
+            host_domain="quickform.example",
+            url_patterns=["*quickform.example/jfe/form/*", "*quickform.example/SE/*"],
         )
-        assert hp.matches_url("https://qualtrics.com/jfe/form/SV_abc123") is True
+        assert hp.matches_url("https://quickform.example/jfe/form/SV_abc123") is True
 
     def test_matches_url_negative(self):
         hp = HostPlaybook(
-            host_domain="qualtrics.com",
-            url_patterns=["*qualtrics.com/jfe/form/*"],
+            host_domain="quickform.example",
+            url_patterns=["*quickform.example/jfe/form/*"],
         )
-        assert hp.matches_url("https://surveymonkey.com/r/abc") is False
+        assert hp.matches_url("https://pollbox.example/r/abc") is False
 
     def test_matches_url_empty_patterns(self):
         hp = HostPlaybook(host_domain="example.com")

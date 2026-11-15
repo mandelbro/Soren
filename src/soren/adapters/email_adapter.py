@@ -6,7 +6,7 @@ from soren.models.task_source import TaskSource
 
 
 class EmailAdapter:
-    """Discovery adapter for email inboxes (Gmail, Outlook, etc.)."""
+    """Discovery adapter for email inboxes (any webmail provider)."""
 
     source_type = "email"
     expected_fields = [

@@ -225,7 +225,7 @@ class TestCredentialsCommands:
         plain = tmp_path / "credentials.yaml"
         plain.write_text(
             "credentials:\n"
-            "  - ref: sproutful\n"
+            "  - ref: acmepanel\n"
             "    service_type: survey_platform\n"
             "    username: user@example.com\n"
             "    password: secret\n"
@@ -278,7 +278,7 @@ class TestCredentialsCommands:
         key_file = tmp_path / "credentials.key"
         store = CredentialStore(encrypted, key_path=key_file)
         store.add(
-            ref="sproutful",
+            ref="acmepanel",
             service_type="survey_platform",
             username="user@example.com",
             password="secret",
@@ -296,7 +296,7 @@ class TestCredentialsCommands:
             ],
         )
         assert result.exit_code == 0
-        assert "sproutful" in result.output
+        assert "acmepanel" in result.output
 
 
 class TestPlaybooksCommands:

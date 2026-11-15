@@ -57,8 +57,8 @@ class TestAutoGenerateSitePlaybook:
         result = await auto_generate_site_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flow_type="login",
         )
 
@@ -73,8 +73,8 @@ class TestAutoGenerateSitePlaybook:
         result = await auto_generate_site_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flow_type="login",
         )
 
@@ -88,8 +88,8 @@ class TestAutoGenerateSitePlaybook:
         await auto_generate_site_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flow_type="execution",
             model="gemma3:27b",
         )
@@ -104,8 +104,8 @@ class TestAutoGenerateSitePlaybook:
         result = await auto_generate_site_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            source_name="prolific",
-            source_url="https://prolific.com",
+            source_name="betapanel",
+            source_url="https://betapanel.example",
             flow_type="login",
         )
 
@@ -121,10 +121,10 @@ class TestAutoGenerateHostPlaybook:
         result = await auto_generate_host_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            host_domain="qualtrics.com",
+            host_domain="quickform.example",
         )
 
-        assert result.host_domain == "qualtrics.com"
+        assert result.host_domain == "quickform.example"
         assert result.learned_from == "auto"
         assert result.confidence == 0.0
         assert "sidebar" in result.navigation
@@ -138,10 +138,10 @@ class TestAutoGenerateHostPlaybook:
         result = await auto_generate_host_playbook(
             llm=llm,
             step_log=SAMPLE_STEP_LOG,
-            host_domain="qualtrics.com",
+            host_domain="quickform.example",
         )
 
-        assert result.host_domain == "qualtrics.com"
+        assert result.host_domain == "quickform.example"
         assert result.navigation == {}
         assert result.quirks == []
 

@@ -17,7 +17,7 @@ def _make_task() -> Task:
         dedup_key="k1",
         title="Complete survey",
         description="Fill out the survey",
-        source_name="prolific",
+        source_name="betapanel",
         task_type="survey",
     )
 

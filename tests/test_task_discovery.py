@@ -75,7 +75,7 @@ async def test_phase3_parse_discovered_tasks():
     backlog = AsyncMock()
 
     discovery = TaskDiscovery(settings, llm, vm, backlog)
-    source = TaskSource(name="prolific", type="survey_platform", url="https://x.co")
+    source = TaskSource(name="betapanel", type="survey_platform", url="https://x.co")
     persona = Persona(name="R", id="researcher")
 
     text = '[{"title": "Survey 1", "estimated_duration_minutes": 15, "estimated_reward": 2.5}]'
@@ -85,7 +85,7 @@ async def test_phase3_parse_discovered_tasks():
     assert tasks[0].estimated_duration_minutes == 15
     assert tasks[0].estimated_reward == 2.5
     assert tasks[0].persona_id == "researcher"
-    assert tasks[0].source_name == "prolific"
+    assert tasks[0].source_name == "betapanel"
 
 
 @pytest.mark.asyncio

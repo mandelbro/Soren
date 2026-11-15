@@ -37,10 +37,10 @@ def _make_llm() -> MagicMock:
     return llm
 
 
-def _make_site_playbook(source_name: str = "prolific") -> SitePlaybook:
+def _make_site_playbook(source_name: str = "betapanel") -> SitePlaybook:
     return SitePlaybook(
         source_name=source_name,
-        source_url="https://prolific.com",
+        source_url="https://betapanel.example",
         flows=SiteFlows(
             login=LoginFlow(
                 steps=[
@@ -61,9 +61,9 @@ class TestLoadSite:
     def test_load_site_returns_playbook_from_valid_yaml(self, svc: PlaybookService, tmp_path: Path) -> None:
         playbook = _make_site_playbook()
         svc.save_site(playbook)
-        loaded = svc.load_site("prolific")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
-        assert loaded.source_name == "prolific"
+        assert loaded.source_name == "betapanel"
         assert loaded.flows.login is not None
 
     def test_load_site_returns_none_for_nonexistent(self, svc: PlaybookService) -> None:
@@ -76,12 +76,12 @@ class TestSaveSite:
         path = svc.save_site(playbook)
         assert path.exists()
         raw = yaml.safe_load(path.read_text())
-        assert raw["source_name"] == "prolific"
+        assert raw["source_name"] == "betapanel"
 
     def test_save_site_round_trip(self, svc: PlaybookService) -> None:
         original = _make_site_playbook()
         svc.save_site(original)
-        loaded = svc.load_site("prolific")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.source_name == original.source_name
         assert loaded.source_url == original.source_url
@@ -95,8 +95,8 @@ class TestSaveFlow:
         new_flow = FlowPlaybook(
             steps=[PlaybookStep(seq=1, instruction="Open tasks", expected_after="Task list visible")]
         )
-        svc.save_flow("prolific", "discovery", new_flow)
-        loaded = svc.load_site("prolific")
+        svc.save_flow("betapanel", "discovery", new_flow)
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.discovery is not None
         assert loaded.flows.discovery.steps[0].instruction == "Open tasks"
@@ -112,8 +112,8 @@ class TestSaveFlow:
     def test_save_flow_execution_with_task_type(self, svc: PlaybookService) -> None:
         svc.save_site(_make_site_playbook())
         exec_flow = FlowPlaybook(steps=[PlaybookStep(seq=1, instruction="Fill form", expected_after="Form submitted")])
-        svc.save_flow("prolific", "execution", exec_flow, task_type="survey")
-        loaded = svc.load_site("prolific")
+        svc.save_flow("betapanel", "execution", exec_flow, task_type="survey")
+        loaded = svc.load_site("betapanel")
         assert loaded is not None
         assert loaded.flows.execution is not None
         assert "survey" in loaded.flows.execution
@@ -121,12 +121,12 @@ class TestSaveFlow:
 
 class TestListSitePlaybooks:
     def test_list_enumerates_all_yaml_files(self, svc: PlaybookService) -> None:
-        svc.save_site(_make_site_playbook("prolific"))
-        svc.save_site(_make_site_playbook("mturk"))
+        svc.save_site(_make_site_playbook("betapanel"))
+        svc.save_site(_make_site_playbook("gammapanel"))
         playbooks = svc.list_site_playbooks()
         names = {p.source_name for p in playbooks}
-        assert "prolific" in names
-        assert "mturk" in names
+        assert "betapanel" in names
+        assert "gammapanel" in names
 
     def test_list_returns_empty_when_no_playbooks(self, svc: PlaybookService) -> None:
         assert svc.list_site_playbooks() == []
@@ -135,8 +135,8 @@ class TestListSitePlaybooks:
 class TestDeleteSite:
     def test_delete_removes_file_and_returns_true(self, svc: PlaybookService) -> None:
         svc.save_site(_make_site_playbook())
-        assert svc.delete_site("prolific") is True
-        assert svc.load_site("prolific") is None
+        assert svc.delete_site("betapanel") is True
+        assert svc.load_site("betapanel") is None
 
     def test_delete_returns_false_for_nonexistent(self, svc: PlaybookService) -> None:
         assert svc.delete_site("nonexistent") is False
@@ -145,15 +145,15 @@ class TestDeleteSite:
 class TestHostPlaybookRoundTrip:
     def test_save_and_load_host(self, svc: PlaybookService) -> None:
         host = HostPlaybook(
-            host_domain="qualtrics.com",
-            url_patterns=["*.qualtrics.com/*"],
+            host_domain="quickform.example",
+            url_patterns=["*.quickform.example/*"],
             quirks=["Session expires after 30 min"],
         )
         path = svc.save_host(host)
         assert path.exists()
-        loaded = svc.load_host("qualtrics.com")
+        loaded = svc.load_host("quickform.example")
         assert loaded is not None
-        assert loaded.host_domain == "qualtrics.com"
+        assert loaded.host_domain == "quickform.example"
         assert loaded.quirks == ["Session expires after 30 min"]
 
 

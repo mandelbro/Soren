@@ -259,7 +259,7 @@ WI 1.1 (Scaffolding)
    - Clear error messages: missing required fields, invalid trait ranges, malformed task sources, duplicate persona IDs across files
 
 3. **Example Persona Files** — `config/personas/`
-   - `researcher.yaml`: Per RFC example (Research Analyst with survey-junkie and gmail sources)
+   - `researcher.yaml`: Per RFC example (Research Analyst with deltapanel and acmemail sources)
    - `professional.yaml`: A second persona with different traits, demographics, and task sources
 
 4. **CLI Integration**
@@ -416,7 +416,7 @@ WI 1.1 (Scaffolding)
 
 **Acceptance Criteria:**
 - [ ] `just encrypt-credentials` encrypts a plaintext JSON file and produces `config/.credentials.enc`
-- [ ] `just add-credential researcher_gmail survey_platform` prompts for username/password/passphrase, adds credential to encrypted file
+- [ ] `just add-credential researcher_acmemail survey_platform` prompts for username/password/passphrase, adds credential to encrypted file
 - [ ] `just list-credentials` displays credential references (name, service type) in a formatted table without exposing secrets
 - [ ] Decryption with incorrect passphrase produces a clear "invalid passphrase" error, not a stack trace
 - [ ] Encrypted file permissions are `0600` (owner-only)

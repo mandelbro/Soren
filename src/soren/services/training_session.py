@@ -202,7 +202,7 @@ class TrainingSession:
     callbacks:
         I/O callbacks for all user interaction.
     source_name:
-        The task-source (site) being trained (e.g. "prolific").
+        The task-source (site) being trained (e.g. "betapanel").
     flow_type:
         Which flow to train: ``"login"``, ``"discovery"``, or ``"execution"``.
     source_url:

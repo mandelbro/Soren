@@ -6,7 +6,7 @@ from soren.models.task_source import TaskSource
 
 
 class SurveyPlatformAdapter:
-    """Discovery adapter for survey platforms (Prolific, etc.)."""
+    """Discovery adapter for survey platforms (research panels and similar)."""
 
     source_type = "survey_platform"
     expected_fields = [
@@ -57,7 +57,7 @@ For EACH survey, provide:
 - provider_task_id: Any visible survey ID, reference number, or unique code
   (from table, URL, or badge). Use null if none visible.
 - status: Available, full, completed, or other status if shown
-- additional_info: Any extra text (e.g. "Prolific approved", "Desktop only")
+- additional_info: Any extra text (e.g. "Beta Panel approved", "Desktop only")
 
 Format as a numbered list:
 1. title: "Survey Title" | duration: 15 min | reward: $2.50 | id: ABC123 | status: available

@@ -179,7 +179,7 @@ WI 4.1 (TaskBacklog Service)
 - **Dependencies**: WI 4.2 (pipeline engine)
 - **Completed**: Yes
 
-**User Story**: As a system operator, I want a survey platform discovery adapter that finds available surveys with their titles, durations, and rewards, so that the agent can autonomously populate the backlog with survey tasks from services like Prolific.
+**User Story**: As a system operator, I want a survey platform discovery adapter that finds available surveys with their titles, durations, and rewards, so that the agent can autonomously populate the backlog with survey tasks from services like Beta Panel.
 
 **Description**: Implement the `SurveyPlatformAdapter` with three prompts totaling ~80 lines. The navigation prompt guides UI-TARS to reach the survey dashboard, handle login, dismiss banners, and scroll to load all items. The extraction prompt instructs Qwen3-VL to enumerate every visible survey with title, duration, reward, and provider ID. The structuring prompt has Gemma3:12B convert raw text to JSON with unit parsing (duration → minutes, reward → numeric). Includes provider-native ID extraction (survey IDs visible in dashboard tables) for primary dedup.
 
@@ -283,7 +283,7 @@ WI 4.1 (TaskBacklog Service)
 - [ ] Build/lint/type-check pass
 
 **Technical Risks:**
-- 🟡 **Email inbox variability**: Gmail, Outlook, Yahoo have vastly different layouts. **Mitigation**: Start with one provider; add provider-specific prompt variations in the extraction prompt.
+- 🟡 **Email inbox variability**: Webmail providers have vastly different layouts. **Mitigation**: Start with one provider; add provider-specific prompt variations in the extraction prompt.
 - 🟢 **Generic form simplicity**: Forms at known URLs are the simplest discovery target. Low risk.
 - 🟡 **Email message-ID extraction**: Not always visible in inbox view. **Mitigation**: Fall back to content fingerprint (sender + subject + timestamp).
 
