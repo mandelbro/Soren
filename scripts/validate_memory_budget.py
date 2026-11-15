@@ -65,6 +65,7 @@ class BenchmarkResult:
 # Multi-signal memory monitoring
 # ---------------------------------------------------------------------------
 
+
 def get_memory_pressure() -> str:
     """Query macOS memory_pressure command. Returns 'normal', 'warn', or 'critical'."""
     try:
@@ -130,8 +131,7 @@ async def take_snapshot(label: str, client: httpx.AsyncClient) -> MemorySnapshot
         memory_pressure=pressure,
         vm_stat_pageouts=pageouts,
         ollama_loaded_models=[
-            {"name": m.get("name", ""), "size_vram_gb": round(m.get("size_vram", 0) / (1024**3), 2)}
-            for m in models
+            {"name": m.get("name", ""), "size_vram_gb": round(m.get("size_vram", 0) / (1024**3), 2)} for m in models
         ],
         ollama_total_vram_gb=round(total_vram, 2),
     )
@@ -140,6 +140,7 @@ async def take_snapshot(label: str, client: httpx.AsyncClient) -> MemorySnapshot
 # ---------------------------------------------------------------------------
 # Ollama model lifecycle helpers
 # ---------------------------------------------------------------------------
+
 
 async def ollama_load(client: httpx.AsyncClient, model: str, keep_alive: int = -1) -> None:
     """Load a model into Ollama by sending a minimal generate request."""
@@ -161,6 +162,7 @@ async def ollama_unload(client: httpx.AsyncClient, model: str) -> None:
 # Benchmark phases
 # ---------------------------------------------------------------------------
 
+
 async def benchmark_component_costs(
     client: httpx.AsyncClient,
     snapshots: list[MemorySnapshot],
@@ -181,8 +183,10 @@ async def benchmark_component_costs(
     costs["gemma3_12b_delta_gb"] = round(snap.psutil_used_gb - baseline.psutil_used_gb, 2)
     costs["gemma3_12b_load_seconds"] = round(load_time, 2)
     costs["gemma3_12b_ollama_vram_gb"] = snap.ollama_total_vram_gb
-    print(f"    Loaded in {load_time:.1f}s, delta {costs['gemma3_12b_delta_gb']:.2f} GB, "
-          f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM")
+    print(
+        f"    Loaded in {load_time:.1f}s, delta {costs['gemma3_12b_delta_gb']:.2f} GB, "
+        f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM"
+    )
 
     await ollama_unload(client, "gemma3:12b")
     await asyncio.sleep(2)
@@ -199,8 +203,10 @@ async def benchmark_component_costs(
     costs["qwen3_vl_delta_gb"] = round(snap.psutil_used_gb - unloaded_snap.psutil_used_gb, 2)
     costs["qwen3_vl_load_seconds"] = round(load_time, 2)
     costs["qwen3_vl_ollama_vram_gb"] = snap.ollama_total_vram_gb
-    print(f"    Loaded in {load_time:.1f}s, delta {costs['qwen3_vl_delta_gb']:.2f} GB, "
-          f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM")
+    print(
+        f"    Loaded in {load_time:.1f}s, delta {costs['qwen3_vl_delta_gb']:.2f} GB, "
+        f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM"
+    )
 
     await ollama_unload(client, "qwen3-vl:8b")
     await asyncio.sleep(2)
@@ -217,8 +223,10 @@ async def benchmark_component_costs(
     costs["gemma3_4b_delta_gb"] = round(snap.psutil_used_gb - unloaded_snap.psutil_used_gb, 2)
     costs["gemma3_4b_load_seconds"] = round(load_time, 2)
     costs["gemma3_4b_ollama_vram_gb"] = snap.ollama_total_vram_gb
-    print(f"    Loaded in {load_time:.1f}s, delta {costs['gemma3_4b_delta_gb']:.2f} GB, "
-          f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM")
+    print(
+        f"    Loaded in {load_time:.1f}s, delta {costs['gemma3_4b_delta_gb']:.2f} GB, "
+        f"ollama reports {snap.ollama_total_vram_gb:.2f} GB VRAM"
+    )
 
     await ollama_unload(client, "gemma3:4b")
 
@@ -251,11 +259,13 @@ async def benchmark_swap_latency(
         snap = await take_snapshot(f"swap_{from_model}_to_{to_model}", client)
         snapshots.append(snap)
 
-        timings.append({
-            "from": from_model,
-            "to": to_model,
-            "seconds": round(swap_time, 2),
-        })
+        timings.append(
+            {
+                "from": from_model,
+                "to": to_model,
+                "seconds": round(swap_time, 2),
+            }
+        )
         print(f"    Completed in {swap_time:.1f}s")
 
         await ollama_unload(client, to_model)
@@ -278,8 +288,10 @@ async def run_full_benchmark(vm_memory_gb: int, output_path: Path) -> None:
         print("[1/5] Taking baseline snapshot...")
         baseline = await take_snapshot("01_baseline", client)
         snapshots.append(baseline)
-        print(f"  Used: {baseline.psutil_used_gb:.1f} GB ({baseline.psutil_percent}%), "
-              f"Pressure: {baseline.memory_pressure}, Pageouts: {baseline.vm_stat_pageouts}")
+        print(
+            f"  Used: {baseline.psutil_used_gb:.1f} GB ({baseline.psutil_percent}%), "
+            f"Pressure: {baseline.memory_pressure}, Pageouts: {baseline.vm_stat_pageouts}"
+        )
 
         # 2. Component cost measurements
         print("\n[2/5] Measuring component memory costs...")
@@ -294,8 +306,10 @@ async def run_full_benchmark(vm_memory_gb: int, output_path: Path) -> None:
         await ollama_load(client, "gemma3:12b")
         peak_snap = await take_snapshot("05_peak_gemma12b", client)
         snapshots.append(peak_snap)
-        print(f"  Peak used: {peak_snap.psutil_used_gb:.1f} GB ({peak_snap.psutil_percent}%), "
-              f"Pressure: {peak_snap.memory_pressure}, Pageouts: {peak_snap.vm_stat_pageouts}")
+        print(
+            f"  Peak used: {peak_snap.psutil_used_gb:.1f} GB ({peak_snap.psutil_percent}%), "
+            f"Pressure: {peak_snap.memory_pressure}, Pageouts: {peak_snap.vm_stat_pageouts}"
+        )
         await ollama_unload(client, "gemma3:12b")
 
         # 5. Calculate verdict
@@ -334,12 +348,12 @@ async def run_full_benchmark(vm_memory_gb: int, output_path: Path) -> None:
     print(f"VERDICT: {verdict}")
     print(f"{'=' * 60}")
 
-    print(f"\nComponent costs:")
+    print("\nComponent costs:")
     for key, val in component_costs.items():
         unit = "s" if "seconds" in key else "GB"
         print(f"  {key}: {val} {unit}")
 
-    print(f"\nSwap timings:")
+    print("\nSwap timings:")
     for swap in swap_timings:
         print(f"  {swap['from']} -> {swap['to']}: {swap['seconds']}s")
 
@@ -349,9 +363,7 @@ async def run_full_benchmark(vm_memory_gb: int, output_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Soren Memory Budget Validation Benchmark"
-    )
+    parser = argparse.ArgumentParser(description="Soren Memory Budget Validation Benchmark")
     parser.add_argument(
         "--vm-memory",
         type=int,

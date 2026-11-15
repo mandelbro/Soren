@@ -99,4 +99,3 @@ Protocol: `@.cursor/rules/zod.mdc` (principal engineer RFC review)
 - [x] I understand the technical scope
 - [x] I identified affected systems
 - [x] I noted blind spots requiring validation (notably Lume snapshot behavior in target runtime)
-
