@@ -431,7 +431,7 @@ Two classes of shortcut are permitted because neither violates the action-transp
 
 **Carve-out: VM state management.** This rejection applies to *task actions* — the things the agent does inside an app to complete a task. It does NOT apply to VM-level infrastructure control that happens *between* tasks or as session-reset housekeeping. osascript usage for closing Safari windows, opening a fresh browser window, switching macOS Spaces, checking window counts, or quitting non-allowlisted apps is permitted, because those actions are at the same level a human operator uses Activity Monitor, Dock, or Mission Control — they are VM/session concerns, not in-app task execution. The test is: *would a real human operator completing this task perform this action as part of the task, or is it environment setup?* If the latter, osascript is fine. If the former, it must go through the vision-based mouse/keyboard pathway.
 
-**What this means in practice.** Proposals to add browser automation frameworks, MCP servers that drive apps via non-GUI paths, or cloud-hosted automation services must be rejected by the Vision-Keeper subagent with a citation to this section. Vision-based grounding via a local VLM is the only sanctioned execution modality for task actions. Improvements to grounding accuracy must come from better models, better preprocessing, better prompting, or better retry logic — never from abandoning the vision-based constraint.
+**What this means in practice.** Proposals to add browser automation frameworks, MCP servers that drive apps via non-GUI paths, or cloud-hosted automation services must be rejected with a citation to this section. Vision-based grounding via a local VLM is the only sanctioned execution modality for task actions. Improvements to grounding accuracy must come from better models, better preprocessing, better prompting, or better retry logic — never from abandoning the vision-based constraint.
 
 ### 2. Single Monolith vs Microservices
 
@@ -585,9 +585,9 @@ After each cycle, `VMManager.reset_browser_state()` closes all Safari windows an
 - Basic `CycleReport` JSON output to `data/reports/`
 - Integration test: manually create a task, execute it in VM, verify completion
 
-**Dependencies**: Phase 2 (VM integration), Ollama running with models pulled. **Prerequisite**: CUA SDK compatibility discovery (Norwood) must complete before Phase 3 begins to determine which patches are still needed.
+**Dependencies**: Phase 2 (VM integration), Ollama running with models pulled. **Prerequisite**: CUA SDK compatibility discovery must complete before Phase 3 begins to determine which patches are still needed.
 
-**Risk**: The CUA SDK may have version changes since `desktop-agent.md` was written. Budget time for patch updates. The Norwood discovery will identify the current SDK version and patch requirements.
+**Risk**: The CUA SDK may have version changes since `desktop-agent.md` was written. Budget time for patch updates. The CUA SDK compatibility discovery will identify the current SDK version and patch requirements.
 
 **Exit criteria**: A manually-created task (e.g., "open Safari and navigate to example.com") executes successfully inside the VM. The ComputerAgent takes screenshots, reasons about UI, and completes the task. A JSON report is produced.
 
@@ -838,7 +838,7 @@ The following questions were raised during initial RFC drafting and have been re
 
 **Question**: Are the 4 CUA SDK patches from `desktop-agent.md` still needed?
 
-**Decision**: Resolved via Norwood discovery (`docs/discovery/cua-sdk-compatibility.md`). All four patches are still needed. The RFC's `cua-computer>=0.7` pin was incorrect — `cua-computer` is at v0.5.14 (different version track from `cua-agent` v0.7.26). Corrected pins: `cua-computer>=0.5,<0.6`, `cua-agent[uitars-mlx]>=0.7`, `mlx-vlm>=0.3,<0.5`. The `ComputerAgent` API has breaking changes (constructor: `tools=[computer]` instead of `computer=`, `instructions=` parameter, message-list input to `run()`). Patches extracted to `src/soren/patches/` with `apply_all()` called before CUA SDK import. Patch 4 (Enter key fix) made configurable for `escape_enter` or `enter_only` per service. See [Appendix: Dependency Manifest](#appendix-dependency-manifest) and Phase 3 deliverables.
+**Decision**: Resolved via the CUA SDK compatibility discovery (`docs/discovery/cua-sdk-compatibility.md`). All four patches are still needed. The RFC's `cua-computer>=0.7` pin was incorrect — `cua-computer` is at v0.5.14 (different version track from `cua-agent` v0.7.26). Corrected pins: `cua-computer>=0.5,<0.6`, `cua-agent[uitars-mlx]>=0.7`, `mlx-vlm>=0.3,<0.5`. The `ComputerAgent` API has breaking changes (constructor: `tools=[computer]` instead of `computer=`, `instructions=` parameter, message-list input to `run()`). Patches extracted to `src/soren/patches/` with `apply_all()` called before CUA SDK import. Patch 4 (Enter key fix) made configurable for `escape_enter` or `enter_only` per service. See [Appendix: Dependency Manifest](#appendix-dependency-manifest) and Phase 3 deliverables.
 
 ### 3. UI-TARS Model Availability via MLX
 

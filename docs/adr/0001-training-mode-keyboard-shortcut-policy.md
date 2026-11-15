@@ -23,11 +23,10 @@ However, the RFC's wording in §Alternatives Considered #1 line 425 states:
 > transformation of the model's perception, not of the action transport.
 
 This "only shortcut" phrasing created an internal tension with the osascript
-carve-out, and left an ambiguity that surfaced when the Vision-Keeper
-subagent was asked to audit a proposal to add automatic URL navigation via
+carve-out, and left an ambiguity that surfaced during an architecture review of a proposal to add automatic URL navigation via
 `Cmd+L → type URL → Enter` dispatched through CUA's keyboard pathway
-(rather than via a VLM-planned click on the URL bar). The subagent
-correctly returned `AMBIGUOUS` because the RFC does not unambiguously
+(rather than via a VLM-planned click on the URL bar). The review
+correctly came back ambiguous because the RFC does not unambiguously
 resolve:
 
 - Whether `Cmd+L` (keyboard shortcut dispatched via CUA → real OS events)
@@ -125,10 +124,10 @@ They have motor memory. Soren's "motor memory" lives in code.
   webpage-click tasks without breaking URL navigation, because URL
   navigation no longer depends on a visible URL bar in UI-TARS's view
 - Future features can use standard browser hotkeys (`Cmd+W` for tab close,
-  `Cmd+F` for find-in-page, etc.) without consulting the Vision-Keeper
+  `Cmd+F` for find-in-page, etc.) without a separate architecture review
   first — as long as they dispatch through CUA's keyboard interface
-- The Vision-Keeper now has an authoritative answer for "is this
-  deterministic keystroke allowed?" instead of returning `AMBIGUOUS`
+- Architecture reviews now have an authoritative answer for "is this
+  deterministic keystroke allowed?" instead of an ambiguous one
 
 **Harder:**
 - Future reviewers need to actively check that a proposed deterministic
@@ -155,8 +154,7 @@ They have motor memory. Soren's "motor memory" lives in code.
 
 ## Alternatives Considered
 
-Four policy options were presented to the user by Vision-Keeper's
-ambiguous verdict:
+The ambiguous review left four policy options:
 
 1. **Never allow non-VLM-originated keystrokes.** Rejected: would force
    UI-TARS to ground visually-obvious fixed shortcuts (Cmd+L, Cmd+W)
@@ -186,7 +184,3 @@ ambiguous verdict:
 This ADR is effective immediately upon acceptance. Implementation of the
 first feature that exercises this policy (auto-URL-navigate for training
 mode) follows in a separate commit.
-
-The Vision-Keeper subagent and its hook should be updated to read ADRs
-as part of the audit process, so this policy is enforced on future
-proposals. That update is a separate commit landing alongside this ADR.

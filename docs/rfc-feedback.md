@@ -1,7 +1,7 @@
 # Soren RFC Review Feedback
 
 Review target: `soren/docs/rfc.md`  
-Protocol: `@.cursor/rules/zod.mdc` (principal engineer RFC review)
+Protocol: principal engineer RFC review
 
 ---
 
