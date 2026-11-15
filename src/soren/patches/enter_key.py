@@ -56,7 +56,7 @@ def _wrap_convert_to_computer_actions(original: Any) -> Any:
     def patched_convert(parsed_responses: list[Any], image_width: int, image_height: int) -> list[Any]:
         actions = original(parsed_responses, image_width, image_height)
         behavior = get_enter_key_behavior()
-        from agent.responses import make_keypress_item, make_type_item
+        from cua_agent.responses import make_keypress_item, make_type_item
 
         return _post_process_actions(actions, behavior, make_type_item, make_keypress_item)
 
@@ -64,9 +64,9 @@ def _wrap_convert_to_computer_actions(original: Any) -> Any:
 
 
 def apply_enter_key_patch() -> None:
-    """Apply Patch 4. Patches agent.loops.uitars.convert_to_computer_actions."""
+    """Apply Patch 4. Patches cua_agent.loops.uitars.convert_to_computer_actions."""
     try:
-        import agent.loops.uitars as uitars_module
+        import cua_agent.loops.uitars as uitars_module
     except ImportError:
         return
 

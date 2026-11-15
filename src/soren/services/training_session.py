@@ -807,7 +807,7 @@ class TrainingSession:
         from soren.patches import apply_all
 
         apply_all()
-        from agent import ComputerAgent
+        from cua_agent import ComputerAgent
 
         from soren.services.task_executor import DEFAULT_VLM_MODEL
 

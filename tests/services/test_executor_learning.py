@@ -65,7 +65,7 @@ class TestExecuteWithLearningSuccess:
         async def completion_gen(*_args, **_kwargs):
             yield {"output": [{"role": "assistant", "content": "Task complete."}]}
 
-        with patch("agent.ComputerAgent") as mock_cls:
+        with patch("cua_agent.ComputerAgent") as mock_cls:
             mock_agent = MagicMock()
             mock_agent.run = completion_gen
             mock_cls.return_value = mock_agent
@@ -85,7 +85,7 @@ class TestExecuteWithLearningStuck:
         executor = _make_executor(tmp_path, step_budget=50)
 
         with (
-            patch("agent.ComputerAgent") as mock_cls,
+            patch("cua_agent.ComputerAgent") as mock_cls,
             patch("soren.services.task_executor.StuckDetector") as mock_detector_cls,
         ):
             detector_instance = MagicMock()
@@ -126,7 +126,7 @@ class TestExecuteWithLearningNormalFailure:
             raise RuntimeError("VLM crashed")
             yield  # noqa: B901 — makes this an async generator
 
-        with patch("agent.ComputerAgent") as mock_cls:
+        with patch("cua_agent.ComputerAgent") as mock_cls:
             mock_agent = MagicMock()
             mock_agent.run = error_gen
             mock_cls.return_value = mock_agent
@@ -146,7 +146,7 @@ class TestStuckDetectorReceivesStepData:
         executor = _make_executor(tmp_path, step_budget=50)
 
         with (
-            patch("agent.ComputerAgent") as mock_cls,
+            patch("cua_agent.ComputerAgent") as mock_cls,
             patch("soren.services.task_executor.StuckDetector") as mock_detector_cls,
         ):
             detector_instance = MagicMock()
@@ -200,7 +200,7 @@ class TestPlaybookChainResolved:
         async def completion_gen(*_args, **_kwargs):
             yield {"output": [{"role": "assistant", "content": "Done."}]}
 
-        with patch("agent.ComputerAgent") as mock_cls:
+        with patch("cua_agent.ComputerAgent") as mock_cls:
             mock_agent = MagicMock()
             mock_agent.run = completion_gen
             mock_cls.return_value = mock_agent
@@ -231,7 +231,7 @@ class TestExecuteUnchanged:
             yield {"output": [{"type": "computer_call"}]}
             yield {"output": [{"role": "assistant", "content": "Task complete."}]}
 
-        with patch("agent.ComputerAgent") as mock_cls:
+        with patch("cua_agent.ComputerAgent") as mock_cls:
             mock_agent = MagicMock()
             mock_agent.run = two_steps_then_done
             mock_cls.return_value = mock_agent

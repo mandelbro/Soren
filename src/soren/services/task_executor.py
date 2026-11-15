@@ -67,7 +67,7 @@ class TaskExecutor:
         from soren.patches import apply_all
 
         apply_all()
-        from agent import ComputerAgent
+        from cua_agent import ComputerAgent
 
         started = time.perf_counter()
         step_log: list[dict[str, Any]] = []
@@ -163,7 +163,7 @@ class TaskExecutor:
         from soren.patches import apply_all
 
         apply_all()
-        from agent import ComputerAgent
+        from cua_agent import ComputerAgent
 
         flow = self._get_flow_playbook(task)
         effective_budget = min(flow.max_steps, self._step_budget) if flow else self._step_budget

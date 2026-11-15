@@ -67,7 +67,7 @@ class TestTaskExecutorConstruction:
         """TaskExecutor constructs ComputerAgent with tools=[computer] (not computer=)."""
         executor = _make_executor(tmp_path)
         mock_computer = MagicMock()
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
@@ -82,7 +82,7 @@ class TestTaskExecutorConstruction:
         """TaskExecutor constructs ComputerAgent with instructions= parameter."""
         executor = _make_executor(tmp_path)
         mock_computer = MagicMock()
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
@@ -96,7 +96,7 @@ class TestTaskExecutorConstruction:
         """TaskExecutor sends message-list input to agent.run()."""
         executor = _make_executor(tmp_path)
         mock_computer = MagicMock()
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             run_calls: list = []
 
@@ -134,7 +134,7 @@ class TestTaskExecutorConstruction:
             screenshot_dir=tmp_path / "screenshots",
         )
         mock_computer = MagicMock()
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
@@ -159,7 +159,7 @@ class TestTaskExecutorConstruction:
             credential_store=store,
         )
         mock_computer = MagicMock()
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
@@ -183,7 +183,7 @@ class TestStepBudget:
             for _ in range(10):
                 yield {"output": [{"type": "computer_call", "call": {"action": {"type": "click"}}}]}
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = many_steps
             mock_agent_cls.return_value = mock_agent
@@ -201,7 +201,7 @@ class TestStepBudget:
             yield {"output": [{"type": "computer_call"}]}
             yield {"output": [{"role": "assistant", "content": "Task complete."}]}
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = two_steps_then_done
             mock_agent_cls.return_value = mock_agent
@@ -229,7 +229,7 @@ class TestOutputParsing:
                 ]
             }
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
@@ -253,7 +253,7 @@ class TestOutputParsing:
                 ]
             }
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
@@ -272,7 +272,7 @@ class TestOutputParsing:
         async def gen(*_args, **_kwargs):
             yield {"output": [{"role": "assistant", "content": "I have completed the task."}]}
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
@@ -293,7 +293,7 @@ class TestTaskResult:
             yield {"output": [{"type": "computer_call"}]}
             yield {"output": [{"type": "computer_call"}]}
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
@@ -315,7 +315,7 @@ class TestErrorHandling:
             raise RuntimeError("VLM crashed")
             yield  # never reached; makes this an async generator for async for
 
-        with patch("agent.ComputerAgent") as mock_agent_cls:
+        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
@@ -375,7 +375,7 @@ class TestTaskExecutorIntegration:
             yield {"output": [{"role": "assistant", "content": "Task complete."}]}
 
         with (
-            patch("agent.ComputerAgent") as mock_agent_cls,
+            patch("cua_agent.ComputerAgent") as mock_agent_cls,
             patch.object(executor, "_verify_completion", return_value=False) as verify_mock,
             patch.object(
                 executor,
