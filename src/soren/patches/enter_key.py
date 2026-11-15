@@ -27,18 +27,17 @@ def _post_process_actions(
     make_type_item: Callable[[str], Any],
     make_keypress_item: Callable[[list[str]], Any],
 ) -> list[Any]:
-    """Post-process action list: strip trailing \\n from type, append keypress."""
+    """Post-process action list: strip trailing \\n from type, append keypress.
+
+    Items are cua_agent ``ResponseComputerToolCallParam`` TypedDicts (plain dicts).
+    """
     result: list[Any] = []
     for item in actions:
-        action = getattr(item, "action", None)
-        if action is None:
+        action = item.get("action") if isinstance(item, dict) else None
+        if not isinstance(action, dict) or action.get("type") != "type":
             result.append(item)
             continue
-        action_type = getattr(action, "type", None)
-        if action_type != "type":
-            result.append(item)
-            continue
-        text = getattr(action, "text", "")
+        text = action.get("text", "")
         if not text.endswith("\n"):
             result.append(item)
             continue

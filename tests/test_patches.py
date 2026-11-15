@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from cua_agent.responses import make_keypress_item, make_type_item
+
 from soren.patches import apply_all
-from soren.patches.enter_key import _post_process_actions
+from soren.patches.enter_key import _post_process_actions, _wrap_convert_to_computer_actions
 from soren.patches.enter_key_config import get_enter_key_behavior, set_default_enter_key_behavior
 
 
@@ -113,79 +115,56 @@ class TestMlxGeneratePatch:
 
 
 class TestEnterKeyPatch:
+    """Patch 4 runs on real cua_agent action items, which are TypedDicts (plain dicts)."""
+
     def test_type_action_ending_with_newline_produces_stripped_and_keypress(self) -> None:
         """Patch 4: type action ending with \\n produces stripped text + keypress(['enter'])."""
-        set_default_enter_key_behavior("enter_only")
-
-        def make_type(text: str):
-            return type("Item", (), {"action": type("A", (), {"type": "type", "text": text})()})()
-
-        def make_keypress(keys: list):
-            return type("Item", (), {"action": type("A", (), {"type": "keypress", "keys": keys})()})()
-
-        actions = [make_type("hello\n")]
-        result = _post_process_actions(actions, "enter_only", make_type, make_keypress)
+        actions = [make_type_item("hello\n")]
+        result = _post_process_actions(actions, "enter_only", make_type_item, make_keypress_item)
         assert len(result) == 2
-        assert result[0].action.text == "hello"
-        assert result[1].action.keys == ["enter"]
+        assert result[0]["action"] == {"type": "type", "text": "hello"}
+        assert result[1]["action"]["type"] == "keypress"
+        assert result[1]["action"]["keys"] == ["enter"]
 
     def test_type_action_without_newline_passes_through(self) -> None:
-        """Patch 4: type action without \\n passes through unchanged."""
-
-        def make_type(text: str):
-            return type("Item", (), {"action": type("A", (), {"type": "type", "text": text})()})()
-
-        def make_keypress(keys: list):
-            return type("Item", (), {"action": type("A", (), {"type": "keypress", "keys": keys})()})()
-
-        actions = [make_type("hello")]
-        result = _post_process_actions(actions, "enter_only", make_type, make_keypress)
-        assert len(result) == 1
-        assert result[0].action.text == "hello"
+        """Patch 4: type action without \\n passes through unchanged (same object)."""
+        item = make_type_item("hello")
+        result = _post_process_actions([item], "enter_only", make_type_item, make_keypress_item)
+        assert result == [item]
 
     def test_escape_enter_mode_produces_escape_then_enter(self) -> None:
         """Patch 4: escape_enter mode produces keypress(['escape']) then keypress(['enter'])."""
-
-        def make_type(text: str):
-            return type("Item", (), {"action": type("A", (), {"type": "type", "text": text})()})()
-
-        def make_keypress(keys: list):
-            return type("Item", (), {"action": type("A", (), {"type": "keypress", "keys": keys})()})()
-
-        actions = [make_type("hi\n")]
-        result = _post_process_actions(actions, "escape_enter", make_type, make_keypress)
+        actions = [make_type_item("hi\n")]
+        result = _post_process_actions(actions, "escape_enter", make_type_item, make_keypress_item)
         assert len(result) == 3
-        assert result[0].action.text == "hi"
-        assert result[1].action.keys == ["escape"]
-        assert result[2].action.keys == ["enter"]
-
-    def test_enter_only_mode_produces_only_enter(self) -> None:
-        """Patch 4: enter_only mode produces only keypress(['enter'])."""
-
-        def make_type(text: str):
-            return type("Item", (), {"action": type("A", (), {"type": "type", "text": text})()})()
-
-        def make_keypress(keys: list):
-            return type("Item", (), {"action": type("A", (), {"type": "keypress", "keys": keys})()})()
-
-        actions = [make_type("x\n")]
-        result = _post_process_actions(actions, "enter_only", make_type, make_keypress)
-        assert len(result) == 2
-        assert result[1].action.keys == ["enter"]
+        assert result[0]["action"]["text"] == "hi"
+        assert result[1]["action"]["keys"] == ["escape"]
+        assert result[2]["action"]["keys"] == ["enter"]
 
     def test_multiple_newlines_in_middle_not_affected(self) -> None:
-        """Patch 4: multiple \\n in middle of text not affected (only trailing)."""
+        """Patch 4: \\n in the middle of text is not affected (only trailing)."""
+        item = make_type_item("line1\nline2")
+        result = _post_process_actions([item], "enter_only", make_type_item, make_keypress_item)
+        assert result == [item]
 
-        def make_type(text: str):
-            return type("Item", (), {"action": type("A", (), {"type": "type", "text": text})()})()
+    def test_non_type_actions_pass_through(self) -> None:
+        """Patch 4: non-type computer calls and output messages are untouched."""
+        keypress = make_keypress_item(["tab"])
+        message = {"type": "message", "role": "assistant", "content": []}
+        result = _post_process_actions([keypress, message], "enter_only", make_type_item, make_keypress_item)
+        assert result == [keypress, message]
 
-        def make_keypress(keys: list):
-            return type("Item", (), {"action": type("A", (), {"type": "keypress", "keys": keys})()})()
+    def test_wrapped_convert_appends_enter_for_real_items(self) -> None:
+        """Patch 4: the installed wrapper rewrites real dict items from convert_to_computer_actions."""
+        set_default_enter_key_behavior("enter_only")
 
-        actions = [make_type("line1\nline2")]  # no trailing \n
-        result = _post_process_actions(actions, "enter_only", make_type, make_keypress)
-        assert len(result) == 1
-        assert result[0].action.text == "line1\nline2"
+        def fake_convert(parsed_responses, image_width, image_height):
+            return [make_type_item("search term\n")]
+
+        result = _wrap_convert_to_computer_actions(fake_convert)([], 1024, 768)
+        assert [item["action"]["type"] for item in result] == ["type", "keypress"]
+        assert result[0]["action"]["text"] == "search term"
+        assert result[1]["action"]["keys"] == ["enter"]
 
     def test_application_order_patches_1_2_before_3(self) -> None:
         """Application order: Patches 1-2 applied before Patch 3."""
