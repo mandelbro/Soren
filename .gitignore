@@ -7,6 +7,15 @@ dist/
 build/
 .eggs/
 
+# Test and coverage output
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Node (tooling only; keeps generated deps out of uploads)
+node_modules/
+
 # claude-flow
 .claude-flow/data
 .hive-mind/sessions
