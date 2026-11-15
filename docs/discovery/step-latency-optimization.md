@@ -316,7 +316,48 @@ All three use the same pattern: `ComputerAgent(model=vlm_model, tools=[computer]
 
 ---
 
-## Appendix: Noise Reduction
+## Appendix A: Bot Detection Considerations (Option 2)
+
+A natural concern with the Direct-Action Fast Path (Option 2) is whether bypassing the VLM makes Soren more detectable as a bot. The short answer: **no — both paths produce identical input events to the browser.**
+
+### Why the CUA Path Is Not "More Human"
+
+The CUA agent (UI-TARS) decides *what* to click and type, but it does not control *how* the input reaches the browser. Regardless of whether the VLM or a direct executor initiates an action, the call chain is:
+
+```
+[VLM decision OR direct executor]
+  → cuaComputerHandler.type() / .click()
+    → computer.interface.type_text() / .left_click()
+      → GenericComputerInterface._send_command() over WebSocket
+        → Computer API server inside VM
+          → macOS CGEvent (OS-level synthetic input)
+            → Safari receives keyboard/mouse event
+```
+
+The VLM does not introduce mouse jitter, variable typing speed, realistic pauses, or cursor movement paths. It sends the same instantaneous `type_text("https://sproutful.com")` call that a direct executor would. If anything, VLM-driven actions can be *more* suspicious — the model produces pixel-perfect coordinate clicks with zero preceding mouse movement, which is a known bot fingerprint.
+
+### What Actually Matters for Bot Detection
+
+Browser-side bot detection (Cloudflare Turnstile, reCAPTCHA, DataDome, etc.) looks at:
+
+| Signal | CUA path | Direct path | Difference |
+|--------|----------|-------------|-----------|
+| Input event source | CGEvent (synthetic) | CGEvent (synthetic) | **None** |
+| Mouse movement patterns | None (teleport clicks) | None (teleport clicks) | **None** |
+| Typing cadence | Instant (`type_text` bulk) | Instant (`type_text` bulk) | **None** |
+| `navigator.webdriver` flag | Not set (real Safari) | Not set (real Safari) | **None** |
+| JavaScript execution context | Normal (no Playwright) | Normal (no Playwright) | **None** |
+| Browser fingerprint | Real Safari in VM | Real Safari in VM | **None** |
+
+The one path that *would* increase detection risk is `computer.interface.playwright_exec()`, which drives a Playwright browser instance. Playwright sets `navigator.webdriver = true` and has other detectable signatures. **Option 2 must use the same `interface.left_click` / `interface.type_text` / `interface.press_key` primitives as the CUA path, not Playwright.**
+
+### Recommendation
+
+If human-like input patterns become necessary in the future (e.g., a target site deploys behavioral biometrics), the correct place to add them is in the `GenericComputerInterface` layer — adding configurable inter-keystroke delays to `type_text`, mouse movement curves to `left_click`, etc. This would benefit *both* the CUA and direct-action paths equally.
+
+---
+
+## Appendix B: Noise Reduction
 
 The terminal output is dominated by repeated `Sentry SDK not installed` and `OpenTelemetry packages not installed` warnings. These are emitted by the CUA SDK's callback system on every import cycle. While not a performance issue (each warning is <1ms), they obscure meaningful output.
 
