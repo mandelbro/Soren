@@ -24,6 +24,11 @@ EnterKeyBehavior = Literal["enter_only", "escape_enter"]
 ENTER_KEY_BEHAVIORS: tuple[str, ...] = ("enter_only", "escape_enter")
 
 
+# Window chrome taller than this is a typo on every supported resolution
+# (Safari's chrome is ~100px at 1024x768, ~200px on a 2x framebuffer).
+MAX_CHROME_HEIGHT_PX = 500
+
+
 class ServiceConfigError(Exception):
     """A service definition file is unreadable or invalid."""
 
@@ -92,6 +97,7 @@ class ServiceConfig(BaseModel):
     chrome_height_px: int | None = Field(
         default=None,
         ge=0,
+        le=MAX_CHROME_HEIGHT_PX,
         description="Pixels of window chrome above the usable content area; cropped from agent screenshots",
     )
     enter_key_behavior: EnterKeyBehavior | None = None

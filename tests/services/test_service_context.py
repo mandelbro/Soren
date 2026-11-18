@@ -109,7 +109,7 @@ class TestCurrentChromeHeight:
         with use_service(_resolved(tmp_path, file_text="config:\n  chrome_height_px: 100\n")):
             assert current_chrome_height_px() == 100
 
-    @pytest.mark.parametrize(("raw", "expected"), [("80", 80), ("-3", 0), ("junk", 0)])
+    @pytest.mark.parametrize(("raw", "expected"), [("80", 80), ("-3", 0), ("junk", 0), ("5000", 0)])
     def test_legacy_env_only_behavior(self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: int) -> None:
         """With no active service, the env var behaves exactly as before (invalid -> 0)."""
         monkeypatch.setenv("SOREN_CHROME_CROP_Y", raw)
@@ -120,8 +120,9 @@ class TestCurrentChromeHeight:
         with use_service(svc):
             assert current_chrome_height_px() == 40
 
-    def test_malformed_env_falls_through_to_service(self, tmp_path: Path) -> None:
-        svc = _resolved(tmp_path, file_text="config:\n  chrome_height_px: 100\n", environ={"SOREN_CHROME_CROP_Y": "x"})
+    @pytest.mark.parametrize("raw", ["x", "5000"])
+    def test_malformed_env_falls_through_to_service(self, tmp_path: Path, raw: str) -> None:
+        svc = _resolved(tmp_path, file_text="config:\n  chrome_height_px: 100\n", environ={"SOREN_CHROME_CROP_Y": raw})
         with use_service(svc):
             assert current_chrome_height_px() == 100
 

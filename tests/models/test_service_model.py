@@ -163,3 +163,15 @@ class TestKeyboardShortcut:
     def test_unknown_key_rejected(self) -> None:
         with pytest.raises(ValidationError):
             KeyboardShortcut.model_validate({"keys": "w", "action": "week", "desc": "typo"})
+
+
+class TestChromeHeightBounds:
+    @pytest.mark.parametrize("value", [0, 100, 500])
+    def test_accepts_values_up_to_the_cap(self, value: int) -> None:
+        assert ServiceConfig(chrome_height_px=value).chrome_height_px == value
+
+    @pytest.mark.parametrize("value", [-1, 501, 10_000])
+    def test_rejects_negative_or_implausibly_tall_chrome(self, value: int) -> None:
+        """Over 500px is a typo on every supported resolution (Safari chrome is ~100px at 1024x768)."""
+        with pytest.raises(ValidationError):
+            ServiceConfig(chrome_height_px=value)

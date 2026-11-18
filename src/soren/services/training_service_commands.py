@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
-from soren.models.service import KeyboardShortcut, Service
+from soren.models.service import MAX_CHROME_HEIGHT_PX, KeyboardShortcut, Service
 from soren.services.service_prompt import format_shortcut
 from soren.services.service_registry import ServiceRegistry
 from soren.services.service_resolution import ResolvedService
@@ -39,7 +39,7 @@ Service commands (saved to config/services/<name>.yaml at /done, after you confi
 
 _UNAVAILABLE = "Service commands are unavailable: this session has no service configuration."
 _SHORTCUT_USAGE = "Usage: /shortcut <keys> <action> [| <when>]  (e.g. /shortcut cmd+k Open quick search)"
-_CROP_USAGE = "Usage: /crop <pixels>  (a non-negative whole number, e.g. /crop 100)"
+_CROP_USAGE = f"Usage: /crop <pixels>  (a whole number from 0 to {MAX_CHROME_HEIGHT_PX}, e.g. /crop 100)"
 # Layers that beat the service file (ADR-0002); a saved value is shadowed while they are set.
 _HIGHER_LAYER_PREFIXES = ("env:", "settings.services.", "persona")
 # ServiceUpdate field -> where the effective value lives on ResolvedService.
@@ -121,7 +121,7 @@ class TrainingServiceCommands:
         if not arg:
             source = self._service.source_of("chrome_height_px")
             return f"Chrome crop: {self._service.config.chrome_height_px}px (from {source})"
-        if not re.fullmatch(r"\d+", arg):
+        if not re.fullmatch(r"\d+", arg) or int(arg) > MAX_CHROME_HEIGHT_PX:
             return _CROP_USAGE
         px = int(arg)
         self.pending.set_chrome_height(px)

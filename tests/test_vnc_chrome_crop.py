@@ -209,11 +209,11 @@ class TestChromeCropFromActiveService:
         return buf.getvalue()
 
     @staticmethod
-    def _patched_interface():
+    def _patched_interface(screen_h: int = 900):
         computer = MagicMock()
         interface = MagicMock()
         interface.left_click = AsyncMock()
-        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": 900})
+        interface.get_screen_size = AsyncMock(return_value={"width": 1440, "height": screen_h})
         computer.interface = interface
         lume_client = AsyncMock()
         lume_client.get_vm = AsyncMock(return_value={"vncUrl": "vnc://:pw@localhost:5900"})
@@ -284,3 +284,33 @@ class TestChromeCropFromActiveService:
             with use_service(make_resolved_service(tmp_path, config={"chrome_height_px": 100})):
                 await interface.screenshot()
             assert await interface.screenshot() == png
+
+    @pytest.mark.asyncio
+    async def test_crop_taller_than_screenshot_shifts_no_clicks(self, monkeypatch, tmp_path):
+        """A crop the patch couldn't apply (image too short) must not move clicks either."""
+        from soren.services.service_context import use_service
+        from tests.service_helpers import make_resolved_service
+
+        monkeypatch.delenv("SOREN_CHROME_CROP_Y", raising=False)
+        interface, orig_click = self._patched_interface(screen_h=300)
+        short = self._png(1440, 300)
+        svc = make_resolved_service(tmp_path, config={"chrome_height_px": 400})
+        with use_service(svc), patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=short):
+            assert await interface.screenshot() == short  # uncropped: UI-TARS sees the full image
+            await interface.left_click(10, 10)
+        orig_click.assert_awaited_once_with(10, 10)
+
+    @pytest.mark.asyncio
+    async def test_click_offset_matches_the_screenshot_the_model_saw(self, monkeypatch, tmp_path):
+        """If the configured crop changes after the screenshot (e.g. /crop), the click still uses the applied one."""
+        from soren.services.service_context import use_service
+        from tests.service_helpers import make_resolved_service
+
+        monkeypatch.delenv("SOREN_CHROME_CROP_Y", raising=False)
+        interface, orig_click = self._patched_interface()
+        with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=self._png()):
+            with use_service(make_resolved_service(tmp_path, "a", config={"chrome_height_px": 100})):
+                await interface.screenshot()
+            with use_service(make_resolved_service(tmp_path, "b", config={"chrome_height_px": 50})):
+                await interface.left_click(820, 15)
+        orig_click.assert_awaited_once_with(820, 115)

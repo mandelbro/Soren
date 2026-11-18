@@ -190,6 +190,9 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
     # --- Coordinate scaling state (populated lazily after first screenshot) ---
     _coord_scale: dict[str, float] = {"x": 1.0, "y": 1.0}
+    # Crop actually applied to the last screenshot UI-TARS saw. Clicks are
+    # relative to that image, so they use this, not the configured value.
+    _applied_crop: list[int] = [0]
     _scale_initialised: list[bool] = [False]
 
     async def _capture_raw_and_init_scale() -> bytes:
@@ -251,9 +254,9 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         """Screenshot consumed by UI-TARS. Cropped to remove Safari chrome when enabled."""
         raw = await _capture_raw_and_init_scale()
         crop_y = _chrome_crop_y()
-        if crop_y > 0:
-            return _apply_crop(raw, crop_y)
-        return raw
+        shown = _apply_crop(raw, crop_y) if crop_y > 0 else raw
+        _applied_crop[0] = crop_y if shown is not raw else 0
+        return shown
 
     async def _vnc_screenshot_full() -> bytes:
         """Unmodified screenshot for verification, baselines, and anywhere
@@ -288,15 +291,13 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
         """Scale (x, y) from VNC-image space to screen-logical space.
 
-        If chrome cropping is active, the incoming ``y`` is relative to the
-        cropped image (UI-TARS sees the webpage area only). Add the crop
-        offset back BEFORE applying the VNC→screen scale so the click lands
-        at the correct absolute screen position.
+        If the last screenshot was cropped, the incoming ``y`` is relative to
+        the cropped image (UI-TARS sees the webpage area only). Add the crop
+        that was actually applied back BEFORE applying the VNC→screen scale so
+        the click lands at the correct absolute screen position.
         """
-        if y is not None:
-            crop_y = _chrome_crop_y()
-            if crop_y > 0:
-                y = y + crop_y
+        if y is not None and _applied_crop[0] > 0:
+            y = y + _applied_crop[0]
         sx = round(x * _coord_scale["x"]) if x is not None else x
         sy = round(y * _coord_scale["y"]) if y is not None else y
         return sx, sy

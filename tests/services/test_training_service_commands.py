@@ -107,7 +107,7 @@ class TestCrop:
         assert svc.config.chrome_height_px == 100  # original resolved service not mutated
         assert "90px" in msg
 
-    @pytest.mark.parametrize("text", ["/crop abc", "/crop -5", "/crop 1.5"])
+    @pytest.mark.parametrize("text", ["/crop abc", "/crop -5", "/crop 1.5", "/crop 501"])
     def test_invalid_values(self, svc, text: str) -> None:
         commands = TrainingServiceCommands(svc)
         assert "Usage: /crop" in commands.handle(text)

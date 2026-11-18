@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from soren.models.service import (
     ENTER_KEY_BEHAVIORS,
+    MAX_CHROME_HEIGHT_PX,
     EnterKeyBehavior,
     KeyboardShortcut,
     Service,
@@ -108,14 +109,15 @@ class ResolvedService(BaseModel):
 
 
 def parse_chrome_height_env(environ: Mapping[str, str]) -> int | None:
-    """Parse ``SOREN_CHROME_CROP_Y``. None when unset or malformed; negatives clamp to 0 (legacy)."""
+    """Parse ``SOREN_CHROME_CROP_Y``. None when unset, malformed or over the cap; negatives clamp to 0 (legacy)."""
     raw = environ.get(CHROME_HEIGHT_ENV_VAR)
     if raw is None:
         return None
     try:
-        return max(0, int(raw.strip()))
+        value = max(0, int(raw.strip()))
     except ValueError:
         return None
+    return value if value <= MAX_CHROME_HEIGHT_PX else None
 
 
 def _env_layer(environ: Mapping[str, str]) -> dict[str, Any]:
