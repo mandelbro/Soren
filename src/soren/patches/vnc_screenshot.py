@@ -89,6 +89,13 @@ def _chrome_crop_y() -> int:
     return current_chrome_height_px()
 
 
+def _service_scope() -> int:
+    """Current ``use_service`` block id; per-screenshot state is only reused within it."""
+    from soren.services.service_context import current_scope
+
+    return current_scope()
+
+
 def _apply_crop(raw_bytes: bytes, crop_y: int) -> bytes:
     """Return ``raw_bytes`` with the top ``crop_y`` pixels removed.
 
@@ -190,9 +197,10 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
     # --- Coordinate scaling state (populated lazily after first screenshot) ---
     _coord_scale: dict[str, float] = {"x": 1.0, "y": 1.0}
-    # Crop actually applied to the last screenshot UI-TARS saw. Clicks are
-    # relative to that image, so they use this, not the configured value.
-    _applied_crop: list[int] = [0]
+    # (service scope, crop) actually applied to the last screenshot UI-TARS saw.
+    # Clicks are relative to that image, so they use this crop, but only within
+    # the same task (scope); before a task's first screenshot, the configured crop.
+    _applied_crop: list[int] = [-1, 0]
     _scale_initialised: list[bool] = [False]
 
     async def _capture_raw_and_init_scale() -> bytes:
@@ -255,7 +263,7 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         raw = await _capture_raw_and_init_scale()
         crop_y = _chrome_crop_y()
         shown = _apply_crop(raw, crop_y) if crop_y > 0 else raw
-        _applied_crop[0] = crop_y if shown is not raw else 0
+        _applied_crop[:] = [_service_scope(), crop_y if shown is not raw else 0]
         return shown
 
     async def _vnc_screenshot_full() -> bytes:
@@ -296,8 +304,11 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         that was actually applied back BEFORE applying the VNC→screen scale so
         the click lands at the correct absolute screen position.
         """
-        if y is not None and _applied_crop[0] > 0:
-            y = y + _applied_crop[0]
+        if y is not None:
+            scope, applied = _applied_crop
+            crop_y = applied if scope == _service_scope() else _chrome_crop_y()
+            if crop_y > 0:
+                y = y + crop_y
         sx = round(x * _coord_scale["x"]) if x is not None else x
         sy = round(y * _coord_scale["y"]) if y is not None else y
         return sx, sy

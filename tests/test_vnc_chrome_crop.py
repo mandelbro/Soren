@@ -302,7 +302,23 @@ class TestChromeCropFromActiveService:
 
     @pytest.mark.asyncio
     async def test_click_offset_matches_the_screenshot_the_model_saw(self, monkeypatch, tmp_path):
-        """If the configured crop changes after the screenshot (e.g. /crop), the click still uses the applied one."""
+        """Within one task, the click uses the crop applied to the screenshot the model just saw."""
+        from soren.services.service_context import use_service
+        from tests.service_helpers import make_resolved_service
+
+        monkeypatch.delenv("SOREN_CHROME_CROP_Y", raising=False)
+        interface, orig_click = self._patched_interface()
+        with (
+            patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=self._png()),
+            use_service(make_resolved_service(tmp_path, "a", config={"chrome_height_px": 100})),
+        ):
+            await interface.screenshot()
+            await interface.left_click(820, 15)
+        orig_click.assert_awaited_once_with(820, 115)
+
+    @pytest.mark.asyncio
+    async def test_previous_tasks_crop_does_not_leak_into_the_next_task(self, monkeypatch, tmp_path):
+        """A click before the next task's first screenshot uses that task's configured crop, not the last one applied."""
         from soren.services.service_context import use_service
         from tests.service_helpers import make_resolved_service
 
@@ -311,6 +327,6 @@ class TestChromeCropFromActiveService:
         with patch("soren.patches.vnc_screenshot._capture_vnc_screenshot", return_value=self._png()):
             with use_service(make_resolved_service(tmp_path, "a", config={"chrome_height_px": 100})):
                 await interface.screenshot()
-            with use_service(make_resolved_service(tmp_path, "b", config={"chrome_height_px": 50})):
+            with use_service(make_resolved_service(tmp_path, "b", config={"chrome_height_px": 0})):
                 await interface.left_click(820, 15)
-        orig_click.assert_awaited_once_with(820, 115)
+        orig_click.assert_awaited_once_with(820, 15)

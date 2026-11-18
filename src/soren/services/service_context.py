@@ -10,6 +10,7 @@ task that activated it without leaking into unrelated tasks.
 
 from __future__ import annotations
 
+import itertools
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,6 +19,9 @@ from contextvars import ContextVar
 from soren.services.service_resolution import ResolvedService, parse_chrome_height_env
 
 _ACTIVE_SERVICE: ContextVar[ResolvedService | None] = ContextVar("soren_active_service", default=None)
+# A new id per ``use_service`` block, so per-screenshot state (the applied crop) can't carry over between tasks.
+_SCOPE: ContextVar[int] = ContextVar("soren_service_scope", default=0)
+_scope_ids = itertools.count(1)
 
 
 def get_active_service() -> ResolvedService | None:
@@ -25,13 +29,20 @@ def get_active_service() -> ResolvedService | None:
     return _ACTIVE_SERVICE.get()
 
 
+def current_scope() -> int:
+    """Identifies the current ``use_service`` block (0 outside any)."""
+    return _SCOPE.get()
+
+
 @contextmanager
 def use_service(service: ResolvedService | None) -> Iterator[ResolvedService | None]:
     """Activate ``service`` for the enclosed block (``None`` explicitly clears it). Always restored on exit."""
     token = _ACTIVE_SERVICE.set(service)
+    scope_token = _SCOPE.set(next(_scope_ids))
     try:
         yield service
     finally:
+        _SCOPE.reset(scope_token)
         _ACTIVE_SERVICE.reset(token)
 
 
