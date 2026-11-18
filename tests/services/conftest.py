@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from soren.models.persona import Persona, Traits
 from soren.models.reset import SessionPrepResult
 from soren.models.session import TaskResult
@@ -130,3 +132,11 @@ def build_meta_agent(
     agent._scorer.score.return_value = 1.0
 
     return agent
+
+
+@pytest.fixture
+def training_virtual_clock(fake_clock):
+    """Run the training modules' sleeps (navigation, step settle delay) on a virtual clock (tests/fake_clock.py)."""
+    from soren.services import training_navigation, training_session, training_step_runner
+
+    return fake_clock(training_session, training_navigation, training_step_runner)

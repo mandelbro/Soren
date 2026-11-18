@@ -13,6 +13,10 @@ def _make_settings(playbooks_dir: Path):
     settings = MagicMock()
     settings.playbooks = MagicMock()
     settings.playbooks.base_dir = str(playbooks_dir)
+    # Real paths for every tier: a MagicMock path becomes ./MagicMock/... via __fspath__.
+    settings.playbooks.site_playbooks_dir = str(playbooks_dir / "site")
+    settings.playbooks.host_playbooks_dir = str(playbooks_dir / "host")
+    settings.playbooks.base_playbooks_dir = str(playbooks_dir / "base")
     settings.llm = MagicMock()
     settings.llm.primary_model = "gemma3:12b"
     return settings
