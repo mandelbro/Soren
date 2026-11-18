@@ -3,7 +3,8 @@
 Writes use PyYAML, so ``#`` comments in an existing file are not preserved
 (``has_user_comments`` lets callers warn first); knowledge belongs in
 ``notes:``. Every write is validated before touching disk, lands atomically
-(temp file + ``os.replace``), and the previous version is copied to
+(a unique, fsynced temp file + ``os.replace``), can refuse to overwrite a file
+that changed since the caller read it, and the previous version is copied to
 ``<services_dir>/.backups/`` where only the newest ``keep_backups`` per
 service are kept. The registry only reads top-level ``*.yaml``, so backups are
 never loaded as services.
@@ -11,9 +12,11 @@ never loaded as services.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +47,13 @@ def _represent_str(dumper: yaml.SafeDumper, data: str) -> yaml.ScalarNode:
 _ServiceDumper.add_representer(str, _represent_str)
 
 
+ABSENT_FINGERPRINT = "absent"
+
+
+class ServiceFileChangedError(ServiceConfigError):
+    """The file changed after the caller read it; nothing was written."""
+
+
 @dataclass(frozen=True)
 class ServiceWriteResult:
     path: Path
@@ -51,17 +61,38 @@ class ServiceWriteResult:
     created: bool
 
 
+# A quote opens a quoted scalar only at the start of a value: after these (plus whitespace) or at line start.
+_VALUE_STARTERS = ":-[{,?"
+
+
 def _has_inline_comment(line: str) -> bool:
-    """True if ``line`` has a ``#`` comment outside quotes (YAML needs whitespace before it)."""
+    """True if ``line`` has a ``#`` comment outside quoted scalars (YAML needs whitespace before it).
+
+    Follows YAML quoting: an apostrophe inside a plain value (``it's``) is literal,
+    ``''`` escapes a quote inside single quotes, and ``\\"`` inside double quotes.
+    """
     quote: str | None = None
-    for i, ch in enumerate(line):
-        if quote:
-            if ch == quote:
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote == "'":
+            if ch == "'":
+                if line[i + 1 : i + 2] == "'":
+                    i += 1  # escaped quote
+                else:
+                    quote = None
+        elif quote == '"':
+            if ch == "\\":
+                i += 1  # skip the escaped character
+            elif ch == '"':
                 quote = None
         elif ch in ("'", '"'):
-            quote = ch
+            before = line[:i].rstrip()
+            if not before or before[-1] in _VALUE_STARTERS:
+                quote = ch
         elif ch == "#" and (i == 0 or line[i - 1].isspace()):
             return True
+        i += 1
     return False
 
 
@@ -88,8 +119,21 @@ class ServiceWriter:
         )
         return MANAGED_HEADER + body
 
-    def write(self, service: Service) -> ServiceWriteResult:
-        """Validate, back up the current file, and atomically replace it. Raises ServiceConfigError/OSError."""
+    @staticmethod
+    def fingerprint(path: Path) -> str:
+        """Identifies the file's current content (``ABSENT_FINGERPRINT`` if missing), for ``expected_fingerprint``."""
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except FileNotFoundError:
+            return ABSENT_FINGERPRINT
+
+    def write(self, service: Service, *, expected_fingerprint: str | None = None) -> ServiceWriteResult:
+        """Validate, back up the current file, and atomically replace it.
+
+        With ``expected_fingerprint`` (from ``fingerprint()`` when the caller read
+        the file), raises ServiceFileChangedError instead of overwriting a file that
+        changed in between. Raises ServiceConfigError/OSError.
+        """
         text = self.render(service)
         path = self._registry.path_for(service.name)
         try:
@@ -99,12 +143,21 @@ class ServiceWriter:
         if round_trip.model_dump() != service.model_dump():
             raise ServiceConfigError(f"{path}: service definition does not survive a YAML round trip")
 
+        if expected_fingerprint is not None and self.fingerprint(path) != expected_fingerprint:
+            raise ServiceFileChangedError(f"{path} changed since it was read; not overwritten")
+
         path.parent.mkdir(parents=True, exist_ok=True)
         created = not path.exists()
         backup = None if created else self._backup(path)
-        tmp = path.with_name(f".{path.name}.tmp")
+        # Unique name in the same directory: concurrent writers can't clobber each
+        # other, and os.replace stays an atomic same-filesystem rename.
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
         try:
-            tmp.write_text(text, encoding="utf-8")
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)

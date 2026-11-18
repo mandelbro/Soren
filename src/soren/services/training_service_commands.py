@@ -23,7 +23,7 @@ from soren.services.service_prompt import format_shortcut
 from soren.services.service_registry import ServiceRegistry
 from soren.services.service_resolution import ResolvedService
 from soren.services.service_update import ServiceUpdate
-from soren.services.service_writer import ServiceWriter
+from soren.services.service_writer import ServiceFileChangedError, ServiceWriter
 
 if TYPE_CHECKING:
     from soren.services.training_types import TrainingCallbacks
@@ -52,6 +52,7 @@ class ServiceSavePlan:
     service: Service
     changes: list[str]
     warnings: list[str]
+    fingerprint: str  # the file as read; the write is refused if it changes before confirmation
 
 
 def _display(value: Any) -> str:
@@ -157,6 +158,7 @@ class TrainingServiceCommands:
         original = self._original
         if original is None:
             return None
+        fingerprint = writer.fingerprint(registry.path_for(original.name))
         existing = registry.get(original.name)
         self._add_auto_proposals(original, existing, source_url)
         if self.pending.is_empty:
@@ -176,7 +178,13 @@ class TrainingServiceCommands:
                 "(the previous version is kept in .backups/). Put lasting knowledge in `notes:`."
             )
         warnings += self._override_warnings(original, new_service)
-        return ServiceSavePlan(path=path, service=new_service, changes=self.pending.describe(), warnings=warnings)
+        return ServiceSavePlan(
+            path=path,
+            service=new_service,
+            changes=self.pending.describe(),
+            warnings=warnings,
+            fingerprint=fingerprint,
+        )
 
     async def save(self, callbacks: TrainingCallbacks, writer: ServiceWriter, source_url: str) -> None:
         """Plan, confirm with the trainer, and write the staged changes. Reports errors; never raises."""
@@ -191,7 +199,13 @@ class TrainingServiceCommands:
             await callbacks.show_message("Service changes not saved.")
             return
         try:
-            result = writer.write(plan.service)
+            result = writer.write(plan.service, expected_fingerprint=plan.fingerprint)
+        except ServiceFileChangedError:
+            await callbacks.show_error(
+                f"{plan.path} changed while you were confirming, so your service changes were not saved "
+                "(nothing was overwritten). Re-apply them with `soren train run` or edit the file directly."
+            )
+            return
         except Exception as exc:
             await callbacks.show_error(f"Could not update {plan.path}: {exc}")
             return

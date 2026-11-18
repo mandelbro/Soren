@@ -132,6 +132,24 @@ class TestWriteBackAtDone:
         errors = " ".join(str(c.args[0]) for c in cb.show_error.await_args_list)
         assert "read-only file system" in errors
 
+    async def test_file_edited_during_confirmation_is_not_overwritten(self, tmp_path: Path) -> None:
+        """A hand edit (or `services migrate`) made while the trainer reads the prompt must survive."""
+        session, cb, registry = _session(tmp_path, [("/crop 90", ""), ("/done", "")])
+        path = registry.path_for("gcal")
+
+        async def confirm_while_someone_edits(*_args):
+            path.write_text(path.read_text(encoding="utf-8") + "notes: edited by hand\n", encoding="utf-8")
+            return True
+
+        cb.confirm_service_update = AsyncMock(side_effect=confirm_while_someone_edits)
+        await _run(session)
+
+        written = load_service_file(path)
+        assert written.notes == "edited by hand"
+        assert written.config.chrome_height_px == 100
+        errors = " ".join(str(c.args[0]) for c in cb.show_error.await_args_list)
+        assert "changed" in errors and "/crop" not in errors  # tells the trainer to re-apply; no stack trace
+
     async def test_playbook_saved_before_service_prompt(self, tmp_path: Path) -> None:
         session, cb, _ = _session(tmp_path, [("/crop 90", ""), ("/done", "")])
         order: list[str] = []

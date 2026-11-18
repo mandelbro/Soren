@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +11,7 @@ import yaml
 
 from soren.models.service import Service, ServiceConfigError
 from soren.services.service_registry import ServiceRegistry, load_service_file
-from soren.services.service_writer import MANAGED_HEADER, ServiceWriter
+from soren.services.service_writer import MANAGED_HEADER, ServiceFileChangedError, ServiceWriter
 
 
 def _service(**kwargs) -> Service:
@@ -85,6 +86,61 @@ class TestWrite:
         assert [p.name for p in services_dir.iterdir() if p.is_file()] == []
 
 
+class TestConcurrentChanges:
+    def test_write_refuses_when_file_changed_since_fingerprint(self, registry: ServiceRegistry) -> None:
+        writer = ServiceWriter(registry)
+        path = writer.write(_service()).path
+        seen = writer.fingerprint(path)
+        path.write_text(path.read_text(encoding="utf-8") + "notes: hand edit\n", encoding="utf-8")
+
+        with pytest.raises(ServiceFileChangedError):
+            writer.write(_service(), expected_fingerprint=seen)
+        assert "hand edit" in path.read_text(encoding="utf-8")
+
+    def test_write_refuses_when_a_file_appeared_since_it_was_absent(self, registry: ServiceRegistry) -> None:
+        writer = ServiceWriter(registry)
+        path = registry.path_for("gcal")
+        seen = writer.fingerprint(path)
+        path.parent.mkdir(parents=True)
+        path.write_text("name: gcal\n", encoding="utf-8")
+
+        with pytest.raises(ServiceFileChangedError):
+            writer.write(_service(), expected_fingerprint=seen)
+
+    def test_write_proceeds_when_file_unchanged(self, registry: ServiceRegistry) -> None:
+        writer = ServiceWriter(registry)
+        path = writer.write(_service()).path
+        result = writer.write(_service(notes="new"), expected_fingerprint=writer.fingerprint(path))
+        assert load_service_file(result.path).notes == "new"
+
+
+class TestAtomicWrite:
+    def test_temp_file_name_is_unique_per_write(self, registry: ServiceRegistry) -> None:
+        """Two writers must not share a temp file and clobber each other's half-written content."""
+        writer = ServiceWriter(registry)
+        temp_paths: list[str] = []
+        real_replace = os.replace
+
+        def spy(src, dst):
+            temp_paths.append(str(src))
+            real_replace(src, dst)
+
+        with patch("soren.services.service_writer.os.replace", side_effect=spy):
+            writer.write(_service())
+            writer.write(_service(notes="again"))
+        assert len(set(temp_paths)) == 2
+        assert all(Path(p).parent == registry.services_dir for p in temp_paths)  # same filesystem for os.replace
+
+    def test_content_is_fsynced_before_replace(self, registry: ServiceRegistry) -> None:
+        calls: list[str] = []
+        with (
+            patch("soren.services.service_writer.os.fsync", side_effect=lambda fd: calls.append("fsync")),
+            patch("soren.services.service_writer.os.replace", side_effect=lambda s, d: calls.append("replace")),
+        ):
+            ServiceWriter(registry).write(_service())
+        assert calls == ["fsync", "replace"]
+
+
 class TestBackups:
     def test_backup_created_before_overwrite(self, registry: ServiceRegistry) -> None:
         writer = ServiceWriter(registry)
@@ -146,6 +202,24 @@ class TestCommentDetection:
         path.parent.mkdir(parents=True)
         path.write_text('name: gcal\nurl: "https://x.example/#anchor"\n', encoding="utf-8")
         assert ServiceWriter(registry).has_user_comments(path) is False
+
+    @pytest.mark.parametrize(
+        ("line", "expected"),
+        [
+            ("notes: it's fine  # important", True),  # apostrophe mid-value is not a quote
+            ("  - don't click Save  # tip", True),
+            ("x: 'quoted'  # after a quoted value", True),
+            ("x: 'it''s #not a comment'", False),  # '' is an escaped quote inside single quotes
+            ('x: "a \\" #still quoted"', False),  # \" is an escaped quote inside double quotes
+            ("x: [a, 'b #c']", False),
+            ("x: a#b", False),  # YAML needs whitespace before #
+        ],
+    )
+    def test_comment_detection_follows_yaml_quoting(self, registry: ServiceRegistry, line: str, expected: bool) -> None:
+        path = registry.path_for("gcal")
+        path.parent.mkdir(parents=True)
+        path.write_text(f"name: gcal\n{line}\n", encoding="utf-8")
+        assert ServiceWriter(registry).has_user_comments(path) is expected
 
     def test_missing_file_has_no_comments(self, registry: ServiceRegistry) -> None:
         assert ServiceWriter(registry).has_user_comments(registry.path_for("nope")) is False
