@@ -92,7 +92,7 @@ class TaskExecutor:
         return resolve_for_task(task, persona, registry=self._service_registry, settings=self._settings)
 
     def _budget_for(self, service: ResolvedService | None) -> int:
-        if self._explicit_step_budget:
+        if self._explicit_step_budget is not None:
             return self._explicit_step_budget
         return service.config.step_budget if service else DEFAULT_STEP_BUDGET
 

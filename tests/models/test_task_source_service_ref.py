@@ -30,10 +30,17 @@ class TestServiceKey:
         assert src.name == "acmepanel"
         assert src.service_key == "acmepanel"
 
-    @pytest.mark.parametrize("data", [{}, {"name": ""}, {"service": ""}, {"name": " ", "service": " "}])
+    @pytest.mark.parametrize("data", [{}, {"service": ""}, {"name": None, "service": " "}])
     def test_neither_name_nor_service_rejected(self, data: dict) -> None:
         with pytest.raises(ValidationError):
             TaskSource.model_validate(data)
+
+    @pytest.mark.parametrize("data", [{"name": ""}, {"name": " ", "service": " "}])
+    def test_blank_legacy_name_still_loads_as_before(self, data: dict) -> None:
+        """main accepted a blank name; rejecting it now would stop the whole persona file loading."""
+        src = TaskSource.model_validate(data)
+        assert src.name == data["name"]
+        assert src.service is None
 
     def test_non_blank_legacy_name_is_never_rewritten(self) -> None:
         """task.source_name matching depends on the exact legacy name; only blank names are filled."""

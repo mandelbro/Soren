@@ -137,6 +137,13 @@ class TestStepBudget:
         _, agent_cls, _ = await _run(_executor(tmp_path, step_budget=7), method, agent_run=self._many_steps)
         assert "maximum of 7 steps" in agent_cls.call_args.kwargs["instructions"]
 
+    async def test_explicit_zero_budget_is_not_treated_as_unset(self, tmp_path: Path, method: str) -> None:
+        """As on main: an explicit budget is used as given, even 0 (stops after the first step)."""
+        write_service(tmp_path / "services", "gcal", config={"step_budget": 4})
+        result, _, _ = await _run(_executor(tmp_path, step_budget=0), method, agent_run=self._many_steps)
+        assert result.steps_taken == 1
+        assert result.error == "Step budget (0) exceeded"
+
     async def test_default_budget_without_service_config(self, tmp_path: Path, method: str) -> None:
         _, agent_cls, _ = await _run(_executor(tmp_path), method)
         assert "maximum of 50 steps" in agent_cls.call_args.kwargs["instructions"]

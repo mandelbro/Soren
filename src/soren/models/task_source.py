@@ -39,7 +39,11 @@ class TaskSource(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _name_defaults_to_service(cls, data: Any) -> Any:
-        """Fill a blank ``name`` from ``service``; never rewrite a non-blank legacy name."""
+        """Fill a blank ``name`` from ``service``; never rewrite a non-blank legacy name.
+
+        Without a ``service``, a source still needs a ``name`` key, but a blank one
+        loads as it did before services existed.
+        """
         if not isinstance(data, dict):
             return data
         name = data.get("name")
@@ -49,9 +53,10 @@ class TaskSource(BaseModel):
         if "service" in data:
             data["service"] = service or None
         if not (isinstance(name, str) and name.strip()):
-            if not service:
+            if service:
+                data["name"] = service
+            elif not isinstance(name, str):
                 raise ValueError("task source needs a 'name' or a 'service' reference")
-            data["name"] = service
         return data
 
     @property
