@@ -85,7 +85,7 @@ def cycle_run(config, dry_run, unattended):
         llm = LLMService(settings)
         vm = VMManager(settings.vm)
         playbook_svc = PlaybookService(settings, llm)
-        discovery = TaskDiscovery(settings, llm, vm, backlog)
+        discovery = TaskDiscovery(settings, llm, vm, backlog, playbook_service=playbook_svc)
         executor = TaskExecutor(settings, llm, vm, playbook_service=playbook_svc)
 
         def load_personas():

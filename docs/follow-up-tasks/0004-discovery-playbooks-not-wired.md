@@ -1,6 +1,6 @@
 # 0004: Discovery ignores login/discovery playbooks in production
 
-**Status:** Open
+**Status:** Done ([#20](https://github.com/mandelbro/Soren/pull/20)). Steps 1 and 2 below are done; step 3 (making `playbook_service` required) was not, and the manual or e2e check is still open.
 **Origin:** Found during service configuration Phase 2 review ([ADR-0002](../adr/0002-service-configuration.md)).
 **Type:** Bug (existing before this work)
 

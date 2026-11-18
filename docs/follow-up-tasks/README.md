@@ -14,4 +14,4 @@ resulting ADR/commit captures everything.
 | [0001](0001-per-service-typing-delay.md) | Apply per-service `typing_delay_ms` | Open | ADR-0002, Phase 2 |
 | [0002](0002-per-service-task-cooldown.md) | Apply per-service `cooldown_between_tasks_s` | Open | ADR-0002, Phase 2 |
 | [0003](0003-llm-suggested-service-knowledge.md) | LLM-suggested service notes and shortcuts from training | Open | ADR-0002, Phase 4 |
-| [0004](0004-discovery-playbooks-not-wired.md) | Discovery ignores login/discovery playbooks in production (bug) | Open | ADR-0002, Phase 2 review |
+| [0004](0004-discovery-playbooks-not-wired.md) | Discovery ignores login/discovery playbooks in production (bug) | Done ([#20](https://github.com/mandelbro/Soren/pull/20)) | ADR-0002, Phase 2 review |

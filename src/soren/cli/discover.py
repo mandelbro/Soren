@@ -24,6 +24,7 @@ def discover_refresh(persona, config):
     from soren.services.llm_service import LLMService
     from soren.services.lume_client import LumeError
     from soren.services.persona_loader import get_personas_dir, load_all
+    from soren.services.playbook_service import PlaybookService
     from soren.services.task_backlog import TaskBacklog, get_default_db_path
     from soren.services.task_discovery import TaskDiscovery
     from soren.services.vm_manager import VMManager
@@ -45,7 +46,7 @@ def discover_refresh(persona, config):
         )
         llm = LLMService(settings)
         vm = VMManager(settings.vm)
-        discovery = TaskDiscovery(settings, llm, vm, backlog)
+        discovery = TaskDiscovery(settings, llm, vm, backlog, playbook_service=PlaybookService(settings, llm))
 
         total_inserted = 0
         try:
