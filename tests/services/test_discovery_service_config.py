@@ -162,3 +162,62 @@ class TestUnexpectedErrors:
         [record] = [r for r in caplog.records if "betapanel" in r.getMessage()]
         assert "p1" in record.getMessage()
         assert record.exc_info is not None and "vnc gone" in str(record.exc_info[1])
+
+
+class TestNavigationWithCroppedChrome:
+    """With the chrome cropped, UI-TARS can't see the URL bar, so discovery navigates first (Cmd+L).
+
+    Same keyboard sequence training uses (ADR-0001): real keystrokes through the
+    CUA transport, not a VLM action.
+    """
+
+    async def _discover(self, tmp_path: Path, crop: int, url: str = "https://acmepanel.example/home"):
+        write_service(tmp_path / "services", "acmepanel", url=url, config={"chrome_height_px": crop})
+        computer = MagicMock()
+        events: list[str] = []
+        computer.interface.hotkey = AsyncMock(side_effect=lambda *k: events.append("hotkey:" + "+".join(k)))
+        computer.interface.type_text = AsyncMock(side_effect=lambda t: events.append(f"type:{t}"))
+        computer.interface.press_key = AsyncMock(side_effect=lambda k: events.append(f"key:{k}"))
+
+        async def run(*_a, **_k):
+            events.append("agent")
+            async for item in _agent_run([])():
+                yield item
+
+        with (
+            patch("cua_agent.ComputerAgent") as agent_cls,
+            patch("soren.services.training_navigation.asyncio.sleep", AsyncMock()),
+        ):
+            agent_cls.return_value.run = run
+            await _discovery(tmp_path, _llm_returning_one_task()).discover(
+                Persona(name="P", id="p1"), TaskSource(service="acmepanel"), computer
+            )
+        return events
+
+    async def test_navigates_to_the_source_url_before_the_agent_runs(self, tmp_path: Path) -> None:
+        events = await self._discover(tmp_path, crop=100)
+        assert events[:4] == ["hotkey:cmd+l", "type:https://acmepanel.example/home", "key:return", "agent"]
+
+    async def test_no_navigation_when_nothing_is_cropped(self, tmp_path: Path) -> None:
+        """Without a crop the URL bar is visible; keep the previous behavior (the agent navigates)."""
+        events = await self._discover(tmp_path, crop=0)
+        assert events == ["agent"]
+
+    async def test_no_navigation_without_a_url(self, tmp_path: Path) -> None:
+        events = await self._discover(tmp_path, crop=100, url="")
+        assert "hotkey:cmd+l" not in events
+
+    async def test_navigation_failure_is_logged_and_the_agent_still_runs(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        write_service(tmp_path / "services", "acmepanel", url="https://a.example", config={"chrome_height_px": 100})
+        computer = MagicMock()
+        computer.interface.hotkey = AsyncMock(side_effect=RuntimeError("VNC dropped"))
+        seen: list = []
+        with patch("cua_agent.ComputerAgent") as agent_cls, caplog.at_level(logging.WARNING):
+            agent_cls.return_value.run = _agent_run(seen)
+            await _discovery(tmp_path, _llm_returning_one_task()).discover(
+                Persona(name="P", id="p1"), TaskSource(service="acmepanel"), computer
+            )
+        assert len(seen) == 1  # phase 1 still ran
+        assert "VNC dropped" in caplog.text
