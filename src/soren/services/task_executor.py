@@ -29,6 +29,7 @@ from soren.services.agent_output import (
     screenshot_from_item,
 )
 from soren.services.credential_handoff import CredentialHandoff
+from soren.services.credential_redaction import CredentialRedactor, register_secrets
 from soren.services.credentials_service import CredentialStore
 from soren.services.execution_verification import PostExecutionVerifier
 from soren.services.learning_monitor import LearningMonitor
@@ -202,6 +203,9 @@ class TaskExecutor:
             max_instruction_tokens=max_tokens,
             service_guidance=render_service_guidance(service),
         )
+        # The local agent gets the credentials above; everything recorded from its run is redacted.
+        redactor = CredentialRedactor(self._credentials.secrets(task, persona))
+        register_secrets(redactor.values)
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
@@ -231,7 +235,7 @@ class TaskExecutor:
 
                 step_screenshot, step_action = None, "unknown"
                 for item in output:
-                    entry = parse_output_item(item, steps_taken)
+                    entry = redactor.redact(parse_output_item(item, steps_taken))
                     if entry:
                         step_log.append(entry)
                         step_action = entry.get("action_type", "unknown")

@@ -32,13 +32,32 @@ class CredentialHandoff:
             combined.append(credential_handoff)
         return combined
 
-    def build(self, task: Task, persona: Persona) -> str | None:
-        """Build execution-time login instructions from source credential_ref."""
-        source_ref = ""
+    def secrets(self, task: Task, persona: Persona) -> dict[str, str]:
+        """The credential values ``build`` hands to the agent (``{"username": ..., "password": ...}``), else {}.
+
+        Used to redact them from recorded execution data before it can reach a cloud model.
+        """
+        source_ref = self._source_ref(task, persona)
+        if not source_ref:
+            return {}
+        try:
+            if self._store is None:
+                self._store = CredentialStore(DEFAULT_CREDENTIALS_PATH, key_path=DEFAULT_KEY_PATH)
+            cred = self._store.get(source_ref)
+        except Exception:
+            return {}
+        return {"username": cred.username, "password": cred.password}
+
+    @staticmethod
+    def _source_ref(task: Task, persona: Persona) -> str:
         for source in persona.task_sources:
             if source.name == task.source_name:
-                source_ref = source.credential_ref.strip()
-                break
+                return source.credential_ref.strip()
+        return ""
+
+    def build(self, task: Task, persona: Persona) -> str | None:
+        """Build execution-time login instructions from source credential_ref."""
+        source_ref = self._source_ref(task, persona)
         if not source_ref:
             return None
 

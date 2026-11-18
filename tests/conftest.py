@@ -48,6 +48,14 @@ def services_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     return directory
 
 
+@pytest.fixture(autouse=True)
+def _isolated_credential_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Credentials registered for the cloud-prompt backstop don't carry over between tests."""
+    from soren.services import credential_redaction
+
+    monkeypatch.setattr(credential_redaction, "_REGISTERED", set())
+
+
 @pytest.fixture
 def fake_clock(monkeypatch: pytest.MonkeyPatch):
     """Factory: ``fake_clock(module, ...)`` puts those modules on a virtual clock (see tests/fake_clock.py)."""

@@ -9,7 +9,9 @@ from typing import Any, TypeVar
 from ollama import AsyncClient
 from pydantic import BaseModel
 
+from soren.models.llm import is_cloud_model
 from soren.services.config_loader import SorenSettings
+from soren.services.credential_redaction import ensure_safe_for_cloud
 from soren.services.memory_guard import MemoryGuard
 
 T = TypeVar("T", bound=BaseModel)
@@ -50,6 +52,7 @@ class LLMService:
     ) -> str:
         """Generate text. Uses MemoryGuard model when model is None."""
         model = model or await self._memory_guard.get_reasoning_model(self._client)
+        self._guard_cloud_prompt(prompt, model)
         self._last_model_used = model
         ka = self._keep_alive()
 
@@ -76,6 +79,7 @@ class LLMService:
     ) -> T:
         """Generate structured output via JSON mode + Pydantic parsing."""
         model = model or await self._memory_guard.get_reasoning_model(self._client)
+        self._guard_cloud_prompt(prompt, model)
         self._last_model_used = model
         full_prompt = f"{prompt}\n\nRespond with valid JSON matching this schema: {schema.model_json_schema()}"
         resp = await self._client.generate(
@@ -90,6 +94,12 @@ class LLMService:
             return schema.model_validate(data)
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Invalid JSON response from LLM: {e}") from e
+
+    @staticmethod
+    def _guard_cloud_prompt(prompt: str, model: str) -> None:
+        """Credentials must never reach a cloud model (RFC §Local or Ollama Cloud Models)."""
+        if is_cloud_model(model):
+            ensure_safe_for_cloud(prompt, model)
 
     async def is_available(self) -> bool:
         """Check Ollama server reachability."""
