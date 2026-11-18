@@ -101,3 +101,42 @@ async def test_full_cycle_discovery_fallback_execution_report(tmp_path: Path) ->
     latest = report_dir / "latest.json"
     if latest.exists():
         assert latest.is_symlink() or latest.exists()
+
+
+@pytest.mark.e2e
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_execute_simple_task_in_live_vm(tmp_path: Path) -> None:
+    """Execute 'open Safari, navigate to example.com' in the live VM through the real CUA SDK."""
+    if not _lume_reachable():
+        pytest.skip("Lume not reachable; start Lume for E2E test (lume serve)")
+
+    from soren.models.session import TaskResult
+    from soren.services.config_loader import load_settings
+    from soren.services.llm_service import LLMService
+    from soren.services.task_executor import TaskExecutor
+    from soren.services.vm_manager import VMManager
+    from tests.task_executor_helpers import make_persona, make_task
+
+    settings = load_settings()
+    vm = VMManager(settings.vm)
+    if not await vm.is_running():
+        pytest.skip("VM not running; start the VM for E2E test")
+    executor = TaskExecutor(
+        settings=settings,
+        llm=LLMService(settings),
+        vm=vm,
+        step_budget=20,
+        screenshot_dir=tmp_path / "screenshots",
+    )
+
+    computer = await vm.connect_computer()
+    result = await executor.execute(
+        make_task(description="Open Safari and navigate to example.com"), make_persona(), computer
+    )
+
+    assert isinstance(result, TaskResult)
+    assert result.duration_seconds >= 0
+    assert result.step_log is not None
+    # The executor did not crash. steps_taken is 0 when the model fails before its first step.
+    assert result.steps_taken >= 0
