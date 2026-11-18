@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shlex
 import time
 
 from soren.models.reset import SessionPrepResult
@@ -101,10 +102,7 @@ end tell
     async def _ensure_required_apps_open(self, required_apps: list[str] | None = None) -> None:
         apps_to_open: set[str] = {*(required_apps or []), "Safari"}
         for app in sorted(apps_to_open):
-            safe = app.replace('"', "").strip()
-            if not safe:
-                continue
-            await self._shell.run_command(f'open -a "{safe}"')
+            await self._open_app(app)
 
     async def open_required_apps(self, apps: list[str]) -> None:
         """Open ``apps`` in the VM (``open -a``) without session-prep side effects.
@@ -115,9 +113,13 @@ end tell
         if self._shell.computer is None:
             raise RuntimeError("Computer not connected. Call connect_computer() first.")
         for app in apps:
-            safe = app.replace('"', "").strip()
-            if safe:
-                await self._shell.run_command(f'open -a "{safe}"')
+            await self._open_app(app)
+
+    async def _open_app(self, app: str) -> None:
+        """Run ``open -a`` with the app name quoted as one literal shell argument (names come from config)."""
+        name = app.strip()
+        if name:
+            await self._shell.run_command(f"open -a {shlex.quote(name)}")
 
     async def _attempt_new_space(self, warnings: list[str]) -> bool:
         if not self._config.create_new_space_per_session:

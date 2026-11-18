@@ -241,7 +241,7 @@ async def test_prepare_session_environment_enforces_whitelist_and_opens_required
     assert result.success is True
     assert sorted(result.closed_apps) == ["Python", "Slack"]
     assert result.remaining_disallowed_apps == []
-    manager._computer.interface.run_command.assert_called_once_with('open -a "Safari"')
+    manager._computer.interface.run_command.assert_called_once_with("open -a Safari")
 
 
 @pytest.mark.asyncio
@@ -251,17 +251,29 @@ async def test_open_required_apps_opens_each_app():
     manager._computer = MagicMock()
     manager._computer.interface.run_command = AsyncMock()
 
-    await manager.open_required_apps(["Calendar", ' Sl"ack ', "  "])
+    await manager.open_required_apps(["Calendar", " Google Chrome ", "  "])
 
     calls = [c.args[0] for c in manager._computer.interface.run_command.await_args_list]
-    assert calls == ['open -a "Calendar"', 'open -a "Slack"']
+    assert calls == ["open -a Calendar", "open -a 'Google Chrome'"]
 
 
 @pytest.mark.asyncio
-async def test_open_required_apps_requires_connection():
+@pytest.mark.parametrize("app", ["Evil$(echo INJECTED)", "Evil`echo INJECTED`", 'Sl"ack', "A'pp; echo INJECTED"])
+async def test_open_required_apps_passes_app_name_as_one_literal_argument(app):
+    """App names come from config files: the VM's shell must receive them as one literal argument."""
+    import subprocess
+
     manager = VMManager(VMConfig(name="test-vm"))
-    with pytest.raises(RuntimeError):
-        await manager.open_required_apps(["Calendar"])
+    manager._computer = MagicMock()
+    manager._computer.interface.run_command = AsyncMock()
+
+    await manager.open_required_apps([app])
+
+    (command,) = [c.args[0] for c in manager._computer.interface.run_command.await_args_list]
+    # Run the command in a real shell with `open` stubbed to print its argument count and app name.
+    stub = 'open() { shift; printf "%s|%s" "$#" "$1"; }; '
+    out = subprocess.run(["sh", "-c", stub + command], capture_output=True, text=True, check=True).stdout
+    assert out == f"1|{app}"
 
 
 # --- CLI tests (vm status, vm stop) ---
