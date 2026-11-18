@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from soren.models.service import ServiceConfigError
+import pytest
+
+from soren.models.service import ServiceConfigError, ServiceNotFoundError
 from soren.models.session import TaskResult
 from tests.service_helpers import make_resolved_service
 from tests.services.conftest import build_meta_agent
@@ -17,11 +19,13 @@ class _Train:
 
 
 def _agent():
+    training_callbacks = MagicMock()
+    training_callbacks.show_error = AsyncMock()
     return build_meta_agent(
         should_offer_training=True,
         task_result=TaskResult(success=False, error="Stuck: action loop detected"),
         intervention_callbacks=_Train(),
-        training_callbacks=MagicMock(),
+        training_callbacks=training_callbacks,
     )
 
 
@@ -42,15 +46,20 @@ class TestTrainInterventionService:
         task_arg, persona_arg = agent._executor.resolve_service_for.call_args.args
         assert task_arg.source_name == "TestSource" and persona_arg.id == "p1"
 
-    async def test_config_error_still_trains_without_service(self) -> None:
+    @pytest.mark.parametrize(
+        "error", [ServiceConfigError("bad file"), ServiceNotFoundError("missing config/services/x.yaml")]
+    )
+    async def test_config_error_skips_training_and_tells_the_trainer(self, error: ServiceConfigError) -> None:
+        """ADR-0002: a broken service config fails, never falls back (a wrong crop causes misclicks)."""
         agent = _agent()
-        agent._executor.resolve_service_for = MagicMock(side_effect=ServiceConfigError("bad file"))
+        agent._executor.resolve_service_for = MagicMock(side_effect=error)
         session_cls = await _run(agent)
-        session_cls.assert_called_once()
-        assert session_cls.call_args.kwargs["service"] is None
+        session_cls.assert_not_called()
+        agent._training_callbacks.show_error.assert_awaited_once()
+        assert str(error) in agent._training_callbacks.show_error.await_args.args[0]
 
-    async def test_non_service_result_ignored(self) -> None:
-        """A mocked/foreign executor returning something else must not reach TrainingSession."""
-        agent = _agent()  # executor is a MagicMock: resolve_service_for returns a MagicMock
+    async def test_task_without_service_file_trains_without_service(self) -> None:
+        """A legacy source with no service file is not an error: train with the env-only crop as before."""
+        agent = _agent()  # resolve_service_for returns None
         session_cls = await _run(agent)
         assert session_cls.call_args.kwargs["service"] is None

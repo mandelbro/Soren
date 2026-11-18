@@ -14,8 +14,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from soren.services.service_resolution import ResolvedService
-
 if TYPE_CHECKING:
     from soren.models.persona import Persona
     from soren.models.session import CycleReport, TaskResult
@@ -128,21 +126,22 @@ class StuckIntervention:
             )
         return False
 
-    def _service_for_training(self, task: Task, persona: Persona) -> ResolvedService | None:
-        """The task's resolved service for the training session, or None (legacy env-only crop)."""
-        try:
-            service = self._executor.resolve_service_for(task, persona)
-        except Exception as exc:
-            logger.warning("Training without service config for %r: %s", task.source_name, exc)
-            return None
-        return service if isinstance(service, ResolvedService) else None
-
     async def _handle_train_intervention(self, task: Task, persona: Persona) -> None:
         """Invoke a training session for the stuck source and flow."""
         if not self._training_callbacks or not self._playbook_service:
             logger.warning("Training requested but no training_callbacks or playbook_service available; skipping.")
             return
-        service = self._service_for_training(task, persona)
+        try:
+            # None for a legacy source with no service file (env-only crop, as before).
+            service = self._executor.resolve_service_for(task, persona)
+        except Exception as exc:
+            # ADR-0002: a broken service config fails visibly; training with a wrong crop misclicks.
+            logger.warning("Not training %r: service config could not be resolved: %s", task.source_name, exc)
+            await self._training_callbacks.show_error(
+                f"Can't train '{task.source_name or 'unknown'}': its service configuration is invalid ({exc}). "
+                "Fix it (`soren services validate`), then run `soren train run`."
+            )
+            return
         try:
             from soren.services.training_session import TrainingSession
 

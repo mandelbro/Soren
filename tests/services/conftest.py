@@ -92,6 +92,7 @@ def build_meta_agent(
     executor = MagicMock()
     result = task_result or TaskResult(success=True, steps_taken=3, step_log=[{"action_type": "click"}])
     executor.execute_with_learning = AsyncMock(return_value=(result, should_offer_training))
+    executor.resolve_service_for = MagicMock(return_value=None)  # legacy task: no service file
 
     persona = make_persona()
     persona_loader = MagicMock(return_value=[persona])
