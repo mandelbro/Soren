@@ -54,9 +54,9 @@ class TestServiceKey:
 
 
 class TestShippedExamplePersona:
-    def test_example_persona_still_validates_unchanged(self) -> None:
+    def test_example_persona_binds_to_the_acmepanel_service(self) -> None:
         persona = load_persona(REPO_ROOT / "config" / "personas" / "example.yaml")
         [source] = persona.task_sources
-        assert source.name == "acmepanel"
-        assert source.service is None
-        assert source.service_key == "acmepanel"
+        assert source.service == "acmepanel"
+        assert source.name == "acmepanel"  # defaults to the service name; tasks match on it
+        assert source.credential_ref == "acmepanel"  # credentials stay persona-bound

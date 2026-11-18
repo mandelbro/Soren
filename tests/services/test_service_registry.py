@@ -142,11 +142,22 @@ class TestShippedExample:
         assert svc is not None
         assert svc.config.chrome_height_px is not None
 
-    def test_shipped_example_matches_example_persona(self) -> None:
-        """The example service and example persona describe the same service -- keep them in sync."""
-        svc = ServiceRegistry(REPO_ROOT / "config" / "services").get("acmepanel")
+    def test_example_persona_gets_url_and_crop_from_the_shipped_service(self) -> None:
+        """The example persona sets no url/type inline, so the service file supplies them."""
+        from soren.services.config_loader import SorenSettings
+        from soren.services.service_resolution import resolve_service
+
         persona = load_persona(REPO_ROOT / "config" / "personas" / "example.yaml")
         [source] = persona.task_sources
-        assert svc is not None
-        assert svc.url == source.url
-        assert svc.type == source.type
+        resolved = resolve_service(
+            source.service_key,
+            registry=ServiceRegistry(REPO_ROOT / "config" / "services"),
+            settings=SorenSettings(),
+            source=source,
+            persona_id=persona.id,
+            environ={},
+        )
+        assert resolved.url == "https://acmepanel.example/home"
+        assert resolved.type == "survey_platform"
+        assert resolved.config.chrome_height_px == 100
+        assert resolved.source_of("url").startswith("service_file:")
