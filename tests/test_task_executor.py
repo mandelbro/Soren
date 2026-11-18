@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from soren.models.session import TaskResult
+from soren.services.config_loader import SorenSettings
 from soren.services.task_executor import TaskExecutor
 from tests.task_executor_helpers import async_gen, make_executor, make_persona, make_persona_with_source, make_task
 
@@ -76,7 +77,7 @@ class TestTaskExecutorConstruction:
         """TaskExecutor uses settings.vlm.full_model_str() when vlm_model not passed."""
         from soren.models.vlm import VLMConfig
 
-        settings = MagicMock()
+        settings = SorenSettings()
         settings.vlm = VLMConfig(provider="mlx", model="custom/UI-TARS-7B")
         llm = MagicMock()
         vm = MagicMock()
@@ -99,7 +100,7 @@ class TestTaskExecutorConstruction:
     @pytest.mark.asyncio
     async def test_includes_credential_handoff_in_instructions(self, tmp_path: Path) -> None:
         """TaskExecutor appends source credential details into execution instructions."""
-        settings = MagicMock()
+        settings = SorenSettings()
         llm = MagicMock()
         vm = MagicMock()
         store = MagicMock()

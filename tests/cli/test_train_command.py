@@ -7,18 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from soren.cli import cli
 from soren.cli.train import _SILENCED_NOISY_LOGGERS, _TRAINING_LOGGERS, _configure_training_logging
+from soren.services.config_loader import SorenSettings
 
 
 def _mock_settings():
-    """Return a minimal mock SorenSettings."""
-    settings = MagicMock()
-    settings.playbooks.base_dir = "data/playbooks"
-    settings.playbooks.site_playbooks_dir = "data/playbooks/site"
-    settings.playbooks.host_playbooks_dir = "data/playbooks/host"
-    settings.playbooks.base_playbooks_dir = "data/playbooks/base"
-    settings.vm = MagicMock()
-    settings.llm = MagicMock()
-    return settings
+    """Default settings (playbook dirs under data/playbooks)."""
+    return SorenSettings()
 
 
 class TestTrainGroupRegistered:

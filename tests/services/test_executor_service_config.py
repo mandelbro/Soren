@@ -227,14 +227,6 @@ class TestRequiredApps:
         assert result.success is True
 
 
-class TestMockSettingsCompatibility:
-    async def test_magicmock_settings_still_work(self, tmp_path: Path) -> None:
-        """Existing tests construct TaskExecutor(settings=MagicMock()); that must keep working."""
-        result, agent_cls, seen = await _run(_executor(tmp_path, settings=MagicMock(), step_budget=50), "execute")
-        agent_cls.assert_called_once()
-        assert seen[0] is not None
-
-
 @pytest.mark.parametrize("method", EXECUTE_METHODS)
 class TestNavigationWithCroppedChrome:
     """The browser reset leaves a blank window; with the chrome cropped UI-TARS can't reach the URL bar.

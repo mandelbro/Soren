@@ -9,6 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from soren.cli import cli
+from soren.services.config_loader import SorenSettings
 
 
 class TestUrlResolvedFromPersona:
@@ -165,7 +166,7 @@ class TestTrainRunUrlFlag:
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.load_settings", return_value=SorenSettings()),
             patch("soren.cli.train.LLMService"),
             patch("soren.cli.train.VMManager"),
             patch("soren.cli.train.PlaybookService"),
@@ -191,7 +192,7 @@ class TestTrainRunUrlFlag:
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.load_settings", return_value=SorenSettings()),
             patch("soren.cli.train.LLMService"),
             patch("soren.cli.train.VMManager"),
             patch("soren.cli.train.PlaybookService"),
@@ -214,7 +215,7 @@ class TestTrainRunUrlFlag:
         with (
             patch("soren.cli.train._configure_training_logging"),
             patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
+            patch("soren.cli.train.load_settings", return_value=SorenSettings()),
             patch("soren.cli.train.LLMService"),
             patch("soren.cli.train.VMManager"),
             patch("soren.cli.train.PlaybookService"),
@@ -240,7 +241,7 @@ class TestTrainRunServiceConfig:
         stack = ExitStack()
         stack.enter_context(patch("soren.cli.train._configure_training_logging"))
         stack.enter_context(patch("soren.cli.train.TrainingSession", MockSession))
-        stack.enter_context(patch("soren.cli.train.load_settings"))
+        stack.enter_context(patch("soren.cli.train.load_settings", return_value=SorenSettings()))
         stack.enter_context(patch("soren.cli.train.LLMService"))
         stack.enter_context(patch("soren.cli.train.VMManager", vm_cls or MagicMock()))
         stack.enter_context(patch("soren.cli.train.PlaybookService"))

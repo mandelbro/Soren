@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from soren.models.service import (
-    ENTER_KEY_BEHAVIORS,
     MAX_CHROME_HEIGHT_PX,
     EnterKeyBehavior,
     KeyboardShortcut,
@@ -144,23 +143,16 @@ def explicit_persona_values(source: TaskSource) -> dict[str, Any]:
 def _settings_services_layer(
     settings: SorenSettings, service_name: str, source: TaskSource | None
 ) -> tuple[str, dict[str, Any]] | None:
-    overrides = getattr(settings, "services", None)
-    if not isinstance(overrides, dict):  # tolerate partial/mock settings objects
-        return None
     for key in (service_name, source.name if source else None):
-        if key and key in overrides and isinstance(overrides[key], ServiceConfig):
-            return f"settings.services.{key}", overrides[key].set_values()
+        if key and key in settings.services:
+            return f"settings.services.{key}", settings.services[key].set_values()
     return None
 
 
 def _settings_default_layers(settings: SorenSettings) -> list[tuple[str, dict[str, Any]]]:
-    layers: list[tuple[str, dict[str, Any]]] = []
-    defaults = getattr(settings, "service_defaults", None)
-    if isinstance(defaults, ServiceConfig):
-        layers.append(("settings.service_defaults", defaults.set_values()))
-    legacy_enter = getattr(settings, "enter_key_behavior", None)
-    if legacy_enter in ENTER_KEY_BEHAVIORS:
-        layers.append(("settings", {"enter_key_behavior": legacy_enter}))
+    layers: list[tuple[str, dict[str, Any]]] = [("settings.service_defaults", settings.service_defaults.set_values())]
+    if settings.enter_key_behavior is not None:
+        layers.append(("settings", {"enter_key_behavior": settings.enter_key_behavior}))
     return layers
 
 
