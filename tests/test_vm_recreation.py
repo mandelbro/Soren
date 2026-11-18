@@ -7,8 +7,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soren.models.vm import VMConfig
+from soren.services import lume_client as _lume_client_module
+from soren.services import vm_browser as _vm_browser_module
+from soren.services import vm_manager as _vm_manager_module
+from soren.services import vm_prepare as _vm_prepare_module
+from soren.services import vm_session_prep as _vm_session_prep_module
 from soren.services.lume_client import LumeAPIError
 from soren.services.vm_manager import VMManager
+
+
+@pytest.fixture(autouse=True)
+def _virtual_clock(fake_clock):
+    """Run this module's sleeps/timeouts on a virtual clock (tests/fake_clock.py)."""
+    return fake_clock(
+        _vm_manager_module, _vm_prepare_module, _vm_session_prep_module, _vm_browser_module, _lume_client_module
+    )
+
 
 # --- recreate_vm tests ---
 

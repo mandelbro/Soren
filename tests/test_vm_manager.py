@@ -8,8 +8,19 @@ import httpx
 import pytest
 
 from soren.models.vm import VMConfig
+from soren.services import lume_client as _lume_client_module
+from soren.services import vm_browser as _vm_browser_module
+from soren.services import vm_manager as _vm_manager_module
+from soren.services import vm_session_prep as _vm_session_prep_module
 from soren.services.lume_client import LumeClient, LumeConnectionError
 from soren.services.vm_manager import VMManager
+
+
+@pytest.fixture(autouse=True)
+def _virtual_clock(fake_clock):
+    """Run this module's sleeps/timeouts on a virtual clock (tests/fake_clock.py)."""
+    return fake_clock(_vm_manager_module, _vm_session_prep_module, _vm_browser_module, _lume_client_module)
+
 
 # --- LumeClient tests ---
 
@@ -215,8 +226,8 @@ async def test_prepare_session_environment_enforces_whitelist_and_opens_required
 
     with (
         patch.object(manager, "ensure_ready", new_callable=AsyncMock),
-        patch.object(manager, "_attempt_new_space", new_callable=AsyncMock, return_value=True),
-        patch.object(manager, "_list_foreground_apps", new_callable=AsyncMock) as list_apps,
+        patch.object(manager._session_prep, "_attempt_new_space", new_callable=AsyncMock, return_value=True),
+        patch.object(manager._session_prep, "_list_foreground_apps", new_callable=AsyncMock) as list_apps,
         patch.object(manager, "_run_osascript", new_callable=AsyncMock) as run_script,
     ):
         list_apps.side_effect = [
@@ -231,6 +242,26 @@ async def test_prepare_session_environment_enforces_whitelist_and_opens_required
     assert sorted(result.closed_apps) == ["Python", "Slack"]
     assert result.remaining_disallowed_apps == []
     manager._computer.interface.run_command.assert_called_once_with('open -a "Safari"')
+
+
+@pytest.mark.asyncio
+async def test_open_required_apps_opens_each_app():
+    """open_required_apps() opens only the requested apps (no Space/whitelist side effects)."""
+    manager = VMManager(VMConfig(name="test-vm"))
+    manager._computer = MagicMock()
+    manager._computer.interface.run_command = AsyncMock()
+
+    await manager.open_required_apps(["Calendar", ' Sl"ack ', "  "])
+
+    calls = [c.args[0] for c in manager._computer.interface.run_command.await_args_list]
+    assert calls == ['open -a "Calendar"', 'open -a "Slack"']
+
+
+@pytest.mark.asyncio
+async def test_open_required_apps_requires_connection():
+    manager = VMManager(VMConfig(name="test-vm"))
+    with pytest.raises(RuntimeError):
+        await manager.open_required_apps(["Calendar"])
 
 
 # --- CLI tests (vm status, vm stop) ---

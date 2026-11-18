@@ -8,8 +8,17 @@ import pytest
 
 from soren.models.reset import ResetResult
 from soren.models.vm import VMConfig
+from soren.services import vm_browser as _vm_browser_module
+from soren.services import vm_manager as _vm_manager_module
 from soren.services.reset_verification import verify_reset
 from soren.services.vm_manager import VMManager
+
+
+@pytest.fixture(autouse=True)
+def _virtual_clock(fake_clock):
+    """Run this module's sleeps/timeouts on a virtual clock (tests/fake_clock.py)."""
+    return fake_clock(_vm_manager_module, _vm_browser_module)
+
 
 # --- ResetResult tests ---
 
