@@ -13,6 +13,9 @@ build/
 htmlcov/
 coverage/
 
+# Session Notes
+docs/sessions/
+
 # Node (tooling only; keeps generated deps out of uploads)
 node_modules/
 
