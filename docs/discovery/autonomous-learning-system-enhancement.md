@@ -483,7 +483,7 @@ If autonomous exploration fails on a service 3 times, should the system stop try
 | Persistent agent scope | Per training flow (not per session) | A login flow and discovery flow have different contexts. Resetting between flows is cleaner. |
 | Chrome crop config location | `ServiceConfig.chrome_crop_y` | Keeps crop value with the service it belongs to. Env var stays as debug override. *(Renamed `chrome_height_px` and applied via a per-task service context instead of `os.environ`; see ADR-0002.)* |
 | Service files location | `config/services/*.yaml` | Human-authored. Application context goes to `SitePlaybook`. *(2026-11-15: gitignored except the shipped example; see Q1 and ADR-0002.)* |
-| Credential handoff sharing | Extract to `soren.services.credential_utils` | Both `TaskExecutor` and `TrainingSession` need it. DRY. |
+| Credential handoff sharing | Extract to a shared module: done as `soren.services.credential_handoff.CredentialHandoff` (PR #20; the original name was `credential_utils`) | Both `TaskExecutor` and `TrainingSession` need it. DRY. |
 | Step budget increase | 10 -> 20 (training), keep 50 (production) | Training steps are more exploratory than production steps. 20 gives headroom without unbounded execution. |
 | Backward compatibility | `TaskSource.service` is optional | Existing persona configs work unchanged. Migration is incremental. |
 | Reasoning retry budget | 10 additional steps, max 1 retry | Enough to try a different approach without burning the full step budget. Budget exhaustion gets 0 retries. |
