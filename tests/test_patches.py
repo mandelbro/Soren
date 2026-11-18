@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
+import pytest
 from cua_agent.responses import make_keypress_item, make_type_item
 
-from soren.patches import apply_all
+from soren.patches import apply_all, enter_key_config
 from soren.patches.enter_key import _post_process_actions, _wrap_convert_to_computer_actions
 from soren.patches.enter_key_config import get_enter_key_behavior, set_default_enter_key_behavior
+from soren.services.service_context import use_service
+from tests.service_helpers import make_resolved_service, write_service
 
 
 class TestApplyAll:
@@ -154,9 +160,8 @@ class TestEnterKeyPatch:
         result = _post_process_actions([keypress, message], "enter_only", make_type_item, make_keypress_item)
         assert result == [keypress, message]
 
-    def test_wrapped_convert_appends_enter_for_real_items(self) -> None:
+    def test_wrapped_convert_appends_enter_for_real_items(self, isolated_enter_key_config: Path) -> None:
         """Patch 4: the installed wrapper rewrites real dict items from convert_to_computer_actions."""
-        set_default_enter_key_behavior("enter_only")
 
         def fake_convert(parsed_responses, image_width, image_height):
             return [make_type_item("search term\n")]
@@ -181,8 +186,69 @@ class TestEnterKeyPatch:
         assert hasattr(gen_mod, "_soren_mlx_generate_patched")
 
 
+@pytest.fixture
+def isolated_enter_key_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the legacy enter-key reader at tmp settings/services instead of the repo's config/."""
+    monkeypatch.setattr(enter_key_config, "SETTINGS_PATH", tmp_path / "settings.yaml")
+    monkeypatch.setattr(enter_key_config, "SERVICES_DIR", tmp_path / "services")
+    set_default_enter_key_behavior("enter_only")
+    yield tmp_path
+    set_default_enter_key_behavior("enter_only")
+
+
 class TestEnterKeyConfig:
-    def test_default_enter_only(self) -> None:
-        """Default behavior is enter_only."""
-        set_default_enter_key_behavior("enter_only")
+    def test_default_enter_only(self, isolated_enter_key_config: Path) -> None:
+        """Default behavior is enter_only (no settings file, no active service)."""
         assert get_enter_key_behavior() == "enter_only"
+
+    def test_set_default_still_honored_for_tests(self, isolated_enter_key_config: Path) -> None:
+        set_default_enter_key_behavior("escape_enter")
+        assert get_enter_key_behavior() == "escape_enter"
+
+    def test_legacy_top_level_setting(self, isolated_enter_key_config: Path) -> None:
+        (isolated_enter_key_config / "settings.yaml").write_text("enter_key_behavior: escape_enter\n")
+        assert get_enter_key_behavior() == "escape_enter"
+
+    def test_legacy_per_service_setting_by_id(self, isolated_enter_key_config: Path) -> None:
+        (isolated_enter_key_config / "settings.yaml").write_text(
+            "enter_key_behavior: enter_only\nservices:\n  slack:\n    enter_key_behavior: escape_enter\n"
+        )
+        assert get_enter_key_behavior("slack") == "escape_enter"
+        assert get_enter_key_behavior("other") == "enter_only"
+
+    def test_service_file_by_id(self, isolated_enter_key_config: Path) -> None:
+        write_service(isolated_enter_key_config / "services", "slack", config={"enter_key_behavior": "escape_enter"})
+        assert get_enter_key_behavior("slack") == "escape_enter"
+
+    def test_invalid_service_file_warns_and_uses_default(
+        self, isolated_enter_key_config: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        services = isolated_enter_key_config / "services"
+        services.mkdir()
+        (services / "slack.yaml").write_text("config:\n  enter_key_behavior: sideways\n")
+        with caplog.at_level(logging.WARNING, logger="soren.patches.enter_key_config"):
+            assert get_enter_key_behavior("slack") == "enter_only"
+        assert any("slack" in r.getMessage() for r in caplog.records)
+
+    def test_active_service_wins_without_reading_files(self, isolated_enter_key_config: Path, tmp_path: Path) -> None:
+        (isolated_enter_key_config / "settings.yaml").write_text("enter_key_behavior: enter_only\n")
+        svc = make_resolved_service(tmp_path / "active", config={"enter_key_behavior": "escape_enter"})
+        with use_service(svc):
+            assert get_enter_key_behavior() == "escape_enter"
+        assert get_enter_key_behavior() == "enter_only"
+
+    def test_explicit_service_id_bypasses_active_service(self, isolated_enter_key_config: Path, tmp_path: Path) -> None:
+        svc = make_resolved_service(tmp_path / "active", config={"enter_key_behavior": "escape_enter"})
+        with use_service(svc):
+            assert get_enter_key_behavior("unconfigured") == "enter_only"
+
+    def test_wrapped_convert_uses_active_service(self, isolated_enter_key_config: Path, tmp_path: Path) -> None:
+        """End to end: the installed patch emits Escape before Enter for an escape_enter service."""
+
+        def fake_convert(parsed_responses, image_width, image_height):
+            return [make_type_item("hello\n")]
+
+        svc = make_resolved_service(tmp_path / "active", config={"enter_key_behavior": "escape_enter"})
+        with use_service(svc):
+            result = _wrap_convert_to_computer_actions(fake_convert)([], 1024, 768)
+        assert [item["action"].get("keys") for item in result[1:]] == [["escape"], ["enter"]]

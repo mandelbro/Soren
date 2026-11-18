@@ -48,7 +48,7 @@ class TestUnattendedAutoSkipAfterTimeout:
             intervention_callbacks=None,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             report = await agent.run_cycle()
 
         assert report.stuck_detected is True
@@ -71,7 +71,7 @@ class TestAttendedModeShowsPromptNotAutoSkip:
             intervention_callbacks=callbacks,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             report = await agent.run_cycle()
 
         # asyncio.sleep should NOT be called (no timeout wait)
@@ -91,7 +91,7 @@ class TestStuckSourcesListPopulated:
             intervention_callbacks=None,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock):
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock):
             report = await agent.run_cycle()
 
         assert len(report.stuck_sources) == 1
@@ -121,7 +121,7 @@ class TestConfidenceFloorEnforced:
             playbook_service=playbook_service,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock):
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock):
             await agent.run_cycle()
 
         playbook_service.update_confidence.assert_called_once()
@@ -141,7 +141,7 @@ class TestConfigurableTimeoutRespected:
             stuck_auto_skip_timeout=5.0,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await agent.run_cycle()
 
         mock_sleep.assert_called_once_with(5.0)

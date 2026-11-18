@@ -5,20 +5,20 @@ passes \\n as literal text to type_text(), which the VM REST API silently drops.
 This patch post-processes the action list: strips trailing \\n from type actions
 and appends explicit keypress(["enter"]) (and optionally keypress(["escape"])).
 
-Configurable via enter_key_behavior: "enter_only" (default) or "escape_enter".
+Configurable via enter_key_behavior: "enter_only" (default) or "escape_enter",
+per service (config/services/<name>.yaml) or globally (settings.yaml); see ADR-0002.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
+from soren.models.service import EnterKeyBehavior
 from soren.patches.enter_key_config import get_enter_key_behavior
 
 # Marker to avoid double-patching
 _PATCHED_ENTER_KEY = "_soren_enter_key_patched"
-
-EnterKeyBehavior = Literal["enter_only", "escape_enter"]
 
 
 def _post_process_actions(

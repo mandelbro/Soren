@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import base64
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from soren.adapters.base import DISCOVERY_READY, get_adapter
+from soren.models.service import ServiceConfigError
 from soren.models.session import DiscoveredTask
+from soren.services.agent_output import contains_text, screenshot_from_item
+from soren.services.service_context import use_service
+from soren.services.service_registry import ServiceRegistry
+from soren.services.service_resolution import ResolvedService, resolve_service
 
 if TYPE_CHECKING:
     from soren.models.persona import Persona
@@ -20,6 +25,8 @@ if TYPE_CHECKING:
     from soren.services.vm_manager import VMManager
 
 DISCOVERY_STEP_BUDGET = 30
+
+logger = logging.getLogger(__name__)
 
 
 class TaskDiscovery:
@@ -34,6 +41,7 @@ class TaskDiscovery:
         *,
         screenshot_dir: Path | None = None,
         playbook_service: PlaybookService | None = None,
+        service_registry: ServiceRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._llm = llm
@@ -41,6 +49,7 @@ class TaskDiscovery:
         self._backlog = backlog
         self._screenshot_dir = screenshot_dir or Path("data/screenshots/discovery")
         self._playbook_service = playbook_service
+        self._service_registry = service_registry or ServiceRegistry()
 
     async def discover(
         self,
@@ -48,13 +57,33 @@ class TaskDiscovery:
         source: TaskSource,
         computer: Any,
     ) -> list[DiscoveredTask]:
-        """Run three-phase pipeline: navigate → extract → structure. Returns discovered tasks."""
+        """Run three-phase pipeline: navigate → extract → structure. Returns discovered tasks.
+
+        The source's service config is resolved first (ADR-0002): url, type, and
+        discovery hint may come from ``config/services/<name>.yaml``, and the
+        navigation phase runs with that service active (chrome crop, Enter key).
+        A source with invalid service config is skipped and logged.
+        """
+        try:
+            service = resolve_service(
+                source.service_key,
+                registry=self._service_registry,
+                settings=self._settings,
+                source=source,
+                persona_id=persona.id or None,
+            )
+        except ServiceConfigError as exc:
+            logger.error("Skipping discovery for source %r: service config error: %s", source.name, exc)
+            return []
+        source = self._effective_source(source, service)
+
         adapter = get_adapter(source.type)
         if not adapter:
             return []
 
         try:
-            screenshots = await self._phase1_navigate(adapter, persona, source, computer)
+            with use_service(service):
+                screenshots = await self._phase1_navigate(adapter, persona, source, computer)
             if not screenshots:
                 return []
 
@@ -65,7 +94,16 @@ class TaskDiscovery:
             tasks = await self._phase3_structure(adapter, source, raw_text, persona)
             return tasks
         except Exception:
+            # One broken source must not stop discovery for the others, but never fail silently.
+            logger.exception("Discovery failed for source %r (persona %r)", source.name, persona.id)
             return []
+
+    @staticmethod
+    def _effective_source(source: TaskSource, service: ResolvedService) -> TaskSource:
+        """Copy of ``source`` with url/type/hint filled from the resolved service (persona values win)."""
+        return source.model_copy(
+            update={"url": service.url, "type": service.type, "discovery_hint": service.discovery_hint}
+        )
 
     def _build_nav_prompt(self, adapter: Any, persona: Persona, source: TaskSource) -> str:
         """Build navigation prompt, injecting login/discovery playbooks if available."""
@@ -140,44 +178,16 @@ class TaskDiscovery:
                 if not isinstance(item, dict):
                     continue
                 if item.get("type") == "computer_call_output":
-                    img_data = self._extract_image(item)
+                    img_data = screenshot_from_item(item)
                     if img_data:
                         screenshots.append(img_data)
                         screenshots = screenshots[-max_screenshots_in_memory:]
-                if self._contains_discovery_ready(item):
+                if contains_text(item, DISCOVERY_READY):
                     return screenshots[-3:] if len(screenshots) >= 3 else screenshots
             if step >= DISCOVERY_STEP_BUDGET:
                 break
 
         return screenshots[-3:] if len(screenshots) >= 3 else screenshots
-
-    def _extract_image(self, item: dict) -> bytes | None:
-        """Extract PNG bytes from computer_call_output item."""
-        output = item.get("output", {})
-        if not isinstance(output, dict):
-            return None
-        img_data = output.get("image_url") or output.get("image") or output.get("screenshot")
-        if not img_data:
-            return None
-        if isinstance(img_data, str) and img_data.startswith("data:"):
-            img_data = img_data.split(",", 1)[-1]
-        try:
-            return base64.b64decode(img_data)
-        except Exception:
-            return None
-
-    def _contains_discovery_ready(self, item: dict) -> bool:
-        """Check if output item contains DISCOVERY_READY sentinel."""
-        content = item.get("content", "")
-        if isinstance(content, str):
-            return DISCOVERY_READY in content
-        if isinstance(content, list):
-            for p in content:
-                if isinstance(p, dict):
-                    text = p.get("text", "")
-                    if DISCOVERY_READY in text:
-                        return True
-        return False
 
     async def _phase2_extract(self, adapter: Any, source: TaskSource, screenshots: list[bytes]) -> str:
         """Phase 2: Send screenshots to Qwen3-VL with extraction prompt."""

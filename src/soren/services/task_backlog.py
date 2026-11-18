@@ -9,6 +9,7 @@ from pathlib import Path
 from soren.models.session import BacklogSummary, DiscoveredTask, InsertResult
 from soren.models.task import Task
 from soren.services.database import DatabaseManager, _iso_now, _json_dumps, _row_to_task
+from soren.services.retry_policy import NON_RETRYABLE_FAILURES
 
 DEFAULT_RETRY_BACKOFF_MINUTES = [5, 30, 120]
 
@@ -174,7 +175,10 @@ class TaskBacklog:
         await self._db.commit()
 
     async def mark_failed(self, task_id: str, reason: str, backoff_minutes: list[int] | None = None) -> None:
-        """Increment attempt_count, set next_eligible_at from backoff, or promote to dead_letter."""
+        """Increment attempt_count, set next_eligible_at from backoff, or promote to dead_letter.
+
+        Non-retryable reasons (e.g. ``config_error``) are dead-lettered immediately.
+        """
         backoff = backoff_minutes or self._backoff
         cursor = await self._db.execute("SELECT attempt_count, max_retries FROM tasks WHERE id = ?", (task_id,))
         row = await cursor.fetchone()
@@ -184,7 +188,7 @@ class TaskBacklog:
         attempt = (row["attempt_count"] or 0) + 1
         max_retries = row["max_retries"] or 3
 
-        if attempt >= max_retries:
+        if attempt >= max_retries or reason in NON_RETRYABLE_FAILURES:
             await self._db.execute(
                 "UPDATE tasks SET status = 'dead_letter', attempt_count = ?, last_failure_reason = ? WHERE id = ?",
                 (attempt, reason, task_id),

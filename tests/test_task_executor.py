@@ -1,62 +1,16 @@
-"""Tests for TaskExecutor."""
+"""Tests for TaskExecutor: agent construction, step budget, results, and error handling."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from soren.models.persona import Persona, Traits
 from soren.models.session import TaskResult
-from soren.models.task import Task
-from soren.models.task_source import TaskSource
 from soren.services.task_executor import TaskExecutor
-from soren.verification.correction import CorrectionStrategy
+from tests.task_executor_helpers import async_gen, make_executor, make_persona, make_persona_with_source, make_task
 
-
-def _make_task(
-    id: str = "task-1",
-    description: str = "Open Safari and navigate to example.com",
-) -> Task:
-    return Task(
-        id=id,
-        dedup_key="test:1:persona",
-        title="Test",
-        description=description,
-        task_type="survey",
-        source_name="TestSource",
-    )
-
-
-def _make_persona() -> Persona:
-    return Persona(name="Test", traits=Traits())
-
-
-def _make_persona_with_source(credential_ref: str = "") -> Persona:
-    return Persona(
-        name="Test",
-        traits=Traits(),
-        task_sources=[
-            TaskSource(
-                name="TestSource",
-                type="survey_platform",
-                url="https://example.com",
-                credential_ref=credential_ref,
-            )
-        ],
-    )
-
-
-def _make_executor(tmp_path: Path, step_budget: int = 50) -> TaskExecutor:
-    settings = MagicMock()
-    llm = MagicMock()
-    vm = MagicMock()
-    return TaskExecutor(
-        settings=settings,
-        llm=llm,
-        vm=vm,
-        step_budget=step_budget,
-        screenshot_dir=tmp_path / "screenshots",
-    )
+# Unit tests: fake the CUA SDK (see tests/conftest.py::fake_cua_sdk).
+pytestmark = pytest.mark.usefixtures("fake_cua_sdk")
 
 
 class TestTaskExecutorConstruction:
@@ -65,13 +19,13 @@ class TestTaskExecutorConstruction:
     @pytest.mark.asyncio
     async def test_constructs_agent_with_tools_list(self, tmp_path: Path) -> None:
         """TaskExecutor constructs ComputerAgent with tools=[computer] (not computer=)."""
-        executor = _make_executor(tmp_path)
+        executor = make_executor(tmp_path)
         mock_computer = MagicMock()
         with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
-            await executor.execute(_make_task(), _make_persona(), mock_computer)
+            await executor.execute(make_task(), make_persona(), mock_computer)
             mock_agent_cls.assert_called_once()
             call_kwargs = mock_agent_cls.call_args[1]
             assert "tools" in call_kwargs
@@ -80,13 +34,13 @@ class TestTaskExecutorConstruction:
     @pytest.mark.asyncio
     async def test_constructs_agent_with_instructions(self, tmp_path: Path) -> None:
         """TaskExecutor constructs ComputerAgent with instructions= parameter."""
-        executor = _make_executor(tmp_path)
+        executor = make_executor(tmp_path)
         mock_computer = MagicMock()
         with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
-            await executor.execute(_make_task(), _make_persona(), mock_computer)
+            await executor.execute(make_task(), make_persona(), mock_computer)
             call_kwargs = mock_agent_cls.call_args[1]
             assert "instructions" in call_kwargs
             assert len(call_kwargs["instructions"]) > 0
@@ -94,7 +48,7 @@ class TestTaskExecutorConstruction:
     @pytest.mark.asyncio
     async def test_sends_message_list_to_run(self, tmp_path: Path) -> None:
         """TaskExecutor sends message-list input to agent.run()."""
-        executor = _make_executor(tmp_path)
+        executor = make_executor(tmp_path)
         mock_computer = MagicMock()
         with patch("cua_agent.ComputerAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -106,8 +60,8 @@ class TestTaskExecutorConstruction:
 
             mock_agent.run = _run
             mock_agent_cls.return_value = mock_agent
-            task = _make_task(description="Do something")
-            await executor.execute(task, _make_persona(), mock_computer)
+            task = make_task(description="Do something")
+            await executor.execute(task, make_persona(), mock_computer)
             assert len(run_calls) == 1
             call_args = run_calls[0][0]
             assert len(call_args) >= 1
@@ -138,7 +92,7 @@ class TestTaskExecutorConstruction:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
-            await executor.execute(_make_task(), _make_persona(), mock_computer)
+            await executor.execute(make_task(), make_persona(), mock_computer)
             call_kwargs = mock_agent_cls.call_args[1]
             assert call_kwargs["model"] == "mlx/custom/UI-TARS-7B"
 
@@ -163,7 +117,7 @@ class TestTaskExecutorConstruction:
             mock_agent = MagicMock()
             mock_agent.run = lambda *a, **k: async_gen([])
             mock_agent_cls.return_value = mock_agent
-            await executor.execute(_make_task(), _make_persona_with_source("acmepanel"), mock_computer)
+            await executor.execute(make_task(), make_persona_with_source("acmepanel"), mock_computer)
             instructions = mock_agent_cls.call_args[1]["instructions"]
             assert "credential_ref: acmepanel" in instructions
             assert "username: user@example.com" in instructions
@@ -176,7 +130,7 @@ class TestStepBudget:
     @pytest.mark.asyncio
     async def test_step_budget_terminates_at_limit(self, tmp_path: Path) -> None:
         """Step budget terminates execution at limit."""
-        executor = _make_executor(tmp_path, step_budget=3)
+        executor = make_executor(tmp_path, step_budget=3)
         mock_computer = MagicMock()
 
         async def many_steps(*_args, **_kwargs):
@@ -187,7 +141,7 @@ class TestStepBudget:
             mock_agent = MagicMock()
             mock_agent.run = many_steps
             mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), mock_computer)
+            result = await executor.execute(make_task(), make_persona(), mock_computer)
             assert result.steps_taken == 3
             assert not result.success
             assert "Step budget" in (result.error or "")
@@ -195,7 +149,7 @@ class TestStepBudget:
     @pytest.mark.asyncio
     async def test_step_budget_allows_completion_before_limit(self, tmp_path: Path) -> None:
         """Step budget allows completion before limit."""
-        executor = _make_executor(tmp_path, step_budget=10)
+        executor = make_executor(tmp_path, step_budget=10)
 
         async def two_steps_then_done(*_args, **_kwargs):
             yield {"output": [{"type": "computer_call"}]}
@@ -205,80 +159,9 @@ class TestStepBudget:
             mock_agent = MagicMock()
             mock_agent.run = two_steps_then_done
             mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
+            result = await executor.execute(make_task(), make_persona(), MagicMock())
             assert result.steps_taken == 2
             assert result.success
-
-
-class TestOutputParsing:
-    """Agent output parsing."""
-
-    @pytest.mark.asyncio
-    async def test_extracts_reasoning_from_result(self, tmp_path: Path) -> None:
-        """Parser extracts reasoning text from result."""
-        executor = _make_executor(tmp_path)
-
-        async def gen(*_args, **_kwargs):
-            yield {
-                "output": [
-                    {
-                        "type": "computer_call",
-                        "call": {"action": {"type": "click", "x": 100, "y": 200}},
-                        "summary": "Click the submit button",
-                    }
-                ]
-            }
-
-        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
-            mock_agent = MagicMock()
-            mock_agent.run = gen
-            mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
-            assert len(result.step_log) >= 1
-            entry = result.step_log[0]
-            assert "Click the submit button" in str(entry.get("vlm_reasoning", ""))
-
-    @pytest.mark.asyncio
-    async def test_extracts_action_type_and_coordinates(self, tmp_path: Path) -> None:
-        """Parser extracts action type and coordinates."""
-        executor = _make_executor(tmp_path)
-
-        async def gen(*_args, **_kwargs):
-            yield {
-                "output": [
-                    {
-                        "type": "computer_call",
-                        "call": {"action": {"type": "click", "x": 640, "y": 480}},
-                    }
-                ]
-            }
-
-        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
-            mock_agent = MagicMock()
-            mock_agent.run = gen
-            mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
-            assert len(result.step_log) >= 1
-            entry = result.step_log[0]
-            assert entry.get("action_type") == "click"
-            assert entry.get("action_data", {}).get("x") == 640
-            assert entry.get("action_data", {}).get("y") == 480
-
-    @pytest.mark.asyncio
-    async def test_detects_completion_message(self, tmp_path: Path) -> None:
-        """Parser detects completion message."""
-        executor = _make_executor(tmp_path)
-
-        async def gen(*_args, **_kwargs):
-            yield {"output": [{"role": "assistant", "content": "I have completed the task."}]}
-
-        with patch("cua_agent.ComputerAgent") as mock_agent_cls:
-            mock_agent = MagicMock()
-            mock_agent.run = gen
-            mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
-            assert result.success
-            assert result.steps_taken == 1
 
 
 class TestTaskResult:
@@ -287,7 +170,7 @@ class TestTaskResult:
     @pytest.mark.asyncio
     async def test_records_step_count_and_duration(self, tmp_path: Path) -> None:
         """TaskResult records correct step count and duration."""
-        executor = _make_executor(tmp_path)
+        executor = make_executor(tmp_path)
 
         async def gen(*_args, **_kwargs):
             yield {"output": [{"type": "computer_call"}]}
@@ -297,7 +180,7 @@ class TestTaskResult:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
+            result = await executor.execute(make_task(), make_persona(), MagicMock())
             assert result.steps_taken == 2
             assert result.duration_seconds >= 0
             assert isinstance(result, TaskResult)
@@ -309,7 +192,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_handles_agent_error_without_crashing(self, tmp_path: Path) -> None:
         """TaskExecutor handles agent error without crashing, returns failed TaskResult."""
-        executor = _make_executor(tmp_path)
+        executor = make_executor(tmp_path)
 
         async def gen(*_args, **_kwargs):
             raise RuntimeError("VLM crashed")
@@ -319,86 +202,7 @@ class TestErrorHandling:
             mock_agent = MagicMock()
             mock_agent.run = gen
             mock_agent_cls.return_value = mock_agent
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
+            result = await executor.execute(make_task(), make_persona(), MagicMock())
             assert not result.success
             assert result.error is not None
             assert "VLM" in result.error or "crashed" in result.error
-
-
-class TestTaskExecutorIntegration:
-    """Integration tests requiring live VM and models."""
-
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_execute_simple_task_in_live_vm(self, tmp_path: Path) -> None:
-        """Execute 'open Safari, navigate to example.com' in live VM via ComputerAgent."""
-        from soren.services.config_loader import load_settings
-        from soren.services.llm_service import LLMService
-        from soren.services.task_executor import TaskExecutor
-        from soren.services.vm_manager import VMManager
-
-        settings = load_settings()
-        vm = VMManager(settings.vm)
-        llm = LLMService(settings)
-        executor = TaskExecutor(
-            settings=settings,
-            llm=llm,
-            vm=vm,
-            step_budget=20,
-            screenshot_dir=tmp_path / "screenshots",
-        )
-
-        if not await vm.is_running():
-            pytest.skip("VM not running; start Lume and VM for integration test")
-
-        computer = await vm.connect_computer()
-        task = _make_task(
-            description="Open Safari and navigate to example.com",
-        )
-        persona = _make_persona()
-
-        result = await executor.execute(task, persona, computer)
-
-        assert isinstance(result, TaskResult)
-        assert result.duration_seconds >= 0
-        assert result.step_log is not None
-        # Executor did not crash. steps_taken > 0 when agent ran; 0 when VLM/model fails before first step
-        assert result.steps_taken >= 0
-
-    @pytest.mark.asyncio
-    async def test_verification_failure_applies_correction_strategy(self, tmp_path: Path) -> None:
-        """Verification failure triggers correction escalation and failed result."""
-        executor = _make_executor(tmp_path)
-
-        async def completion_with_screenshot(*_args, **_kwargs):
-            yield {"output": [{"type": "computer_call_output", "output": {"image": "aGVsbG8="}}]}
-            yield {"output": [{"role": "assistant", "content": "Task complete."}]}
-
-        with (
-            patch("cua_agent.ComputerAgent") as mock_agent_cls,
-            patch.object(executor, "_verify_completion", return_value=False) as verify_mock,
-            patch.object(
-                executor,
-                "_attempt_corrections",
-                return_value=CorrectionStrategy.KEYPRESS,
-            ) as correction_mock,
-        ):
-            mock_agent = MagicMock()
-            mock_agent.run = completion_with_screenshot
-            mock_agent_cls.return_value = mock_agent
-
-            result = await executor.execute(_make_task(), _make_persona(), MagicMock())
-
-            verify_mock.assert_awaited_once()
-            correction_mock.assert_awaited_once()
-            assert result.success is False
-            assert result.verification_passed is False
-            assert result.correction_applied == CorrectionStrategy.KEYPRESS.value
-            assert any(step.get("action_type") == "verify" for step in result.step_log)
-            assert any(step.get("action_type") == "correction" for step in result.step_log)
-
-
-async def async_gen(items):
-    """Helper to create async generator from list."""
-    for x in items:
-        yield x

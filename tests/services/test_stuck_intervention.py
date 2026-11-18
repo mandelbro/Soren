@@ -164,7 +164,7 @@ class TestUnattendedModeDoesNotPrompt:
             intervention_callbacks=None,
         )
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock):
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock):
             report = await agent.run_cycle()
 
         assert report.stuck_detected is True

@@ -29,6 +29,7 @@ redundant async calls on every click.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -58,7 +59,7 @@ def _cursor_warp_delay() -> float:
 
 
 def _chrome_crop_y() -> int:
-    """Read the browser-chrome crop height from env (default 0, no crop).
+    """Return the browser/window chrome height to crop (0 = no crop).
 
     When > 0, the top N pixels of every VNC screenshot are removed before
     being handed to UI-TARS, so the model sees only the webpage content area
@@ -77,15 +78,15 @@ def _chrome_crop_y() -> int:
     vision-based mandate. Clicks are still dispatched as real OS mouse
     events via CUA.
 
-    Set ``SOREN_CHROME_CROP_Y=100`` to enable for webpage click tasks. Leave
-    unset (default 0) for URL-bar tasks or any task that targets the Safari
-    toolbar itself.
+    The value comes from the active service's ``chrome_height_px``
+    (``config/services/<name>.yaml``; see ADR-0002), or, when no service is
+    active, from ``SOREN_CHROME_CROP_Y`` (legacy; invalid values -> 0). The
+    env var also overrides the service value, for debugging. Read on every
+    call so the screenshot crop and click offset always agree.
     """
-    raw = os.environ.get("SOREN_CHROME_CROP_Y", "0")
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return 0
+    from soren.services.service_context import current_chrome_height_px
+
+    return current_chrome_height_px()
 
 
 def _apply_crop(raw_bytes: bytes, crop_y: int) -> bytes:
@@ -182,8 +183,6 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     screen-logical coordinates.  If these differ (e.g. Retina 2x framebuffer),
     every click lands at the wrong position.
     """
-    import asyncio
-
     if not (hasattr(computer, "interface") and computer.interface is not None):
         return
 
@@ -326,8 +325,6 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
             )
             return
         if delay > 0:
-            import asyncio
-
             await asyncio.sleep(delay)
 
     async def _left_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:
