@@ -29,6 +29,7 @@ redundant async calls on every click.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -58,7 +59,7 @@ def _cursor_warp_delay() -> float:
 
 
 def _chrome_crop_y() -> int:
-    """Read the browser-chrome crop height from env (default 0, no crop).
+    """Return the browser/window chrome height to crop (0 = no crop).
 
     When > 0, the top N pixels of every VNC screenshot are removed before
     being handed to UI-TARS, so the model sees only the webpage content area
@@ -77,15 +78,22 @@ def _chrome_crop_y() -> int:
     vision-based mandate. Clicks are still dispatched as real OS mouse
     events via CUA.
 
-    Set ``SOREN_CHROME_CROP_Y=100`` to enable for webpage click tasks. Leave
-    unset (default 0) for URL-bar tasks or any task that targets the Safari
-    toolbar itself.
+    The value comes from the active service's ``chrome_height_px``
+    (``config/services/<name>.yaml``; see ADR-0002), or, when no service is
+    active, from ``SOREN_CHROME_CROP_Y`` (legacy; invalid values -> 0). The
+    env var also overrides the service value, for debugging. Read on every
+    call so the screenshot crop and click offset always agree.
     """
-    raw = os.environ.get("SOREN_CHROME_CROP_Y", "0")
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return 0
+    from soren.services.service_context import current_chrome_height_px
+
+    return current_chrome_height_px()
+
+
+def _service_scope() -> int:
+    """Current ``use_service`` block id; per-screenshot state is only reused within it."""
+    from soren.services.service_context import current_scope
+
+    return current_scope()
 
 
 def _apply_crop(raw_bytes: bytes, crop_y: int) -> bytes:
@@ -182,8 +190,6 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     screen-logical coordinates.  If these differ (e.g. Retina 2x framebuffer),
     every click lands at the wrong position.
     """
-    import asyncio
-
     if not (hasattr(computer, "interface") and computer.interface is not None):
         return
 
@@ -191,6 +197,10 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
 
     # --- Coordinate scaling state (populated lazily after first screenshot) ---
     _coord_scale: dict[str, float] = {"x": 1.0, "y": 1.0}
+    # (service scope, crop) actually applied to the last screenshot UI-TARS saw.
+    # Clicks are relative to that image, so they use this crop, but only within
+    # the same task (scope); before a task's first screenshot, the configured crop.
+    _applied_crop: list[int] = [-1, 0]
     _scale_initialised: list[bool] = [False]
 
     async def _capture_raw_and_init_scale() -> bytes:
@@ -252,9 +262,9 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
         """Screenshot consumed by UI-TARS. Cropped to remove Safari chrome when enabled."""
         raw = await _capture_raw_and_init_scale()
         crop_y = _chrome_crop_y()
-        if crop_y > 0:
-            return _apply_crop(raw, crop_y)
-        return raw
+        shown = _apply_crop(raw, crop_y) if crop_y > 0 else raw
+        _applied_crop[:] = [_service_scope(), crop_y if shown is not raw else 0]
+        return shown
 
     async def _vnc_screenshot_full() -> bytes:
         """Unmodified screenshot for verification, baselines, and anywhere
@@ -289,13 +299,14 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
     def _scale_xy(x: Any, y: Any) -> tuple[int, int]:
         """Scale (x, y) from VNC-image space to screen-logical space.
 
-        If chrome cropping is active, the incoming ``y`` is relative to the
-        cropped image (UI-TARS sees the webpage area only). Add the crop
-        offset back BEFORE applying the VNC→screen scale so the click lands
-        at the correct absolute screen position.
+        If the last screenshot was cropped, the incoming ``y`` is relative to
+        the cropped image (UI-TARS sees the webpage area only). Add the crop
+        that was actually applied back BEFORE applying the VNC→screen scale so
+        the click lands at the correct absolute screen position.
         """
         if y is not None:
-            crop_y = _chrome_crop_y()
+            scope, applied = _applied_crop
+            crop_y = applied if scope == _service_scope() else _chrome_crop_y()
             if crop_y > 0:
                 y = y + crop_y
         sx = round(x * _coord_scale["x"]) if x is not None else x
@@ -326,8 +337,6 @@ def patch_computer_screenshot(computer: Any, lume_client: Any, vm_name: str) -> 
             )
             return
         if delay > 0:
-            import asyncio
-
             await asyncio.sleep(delay)
 
     async def _left_click_scaled(x: Any = None, y: Any = None, **kwargs: Any) -> None:

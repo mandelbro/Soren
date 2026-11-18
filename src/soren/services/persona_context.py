@@ -203,6 +203,7 @@ class PersonaContext:
         step_budget: int = DEFAULT_STEP_BUDGET,
         max_instruction_tokens: int | None = None,
         token_counter: Callable[[str], int] | None = None,
+        service_guidance: str | None = None,
     ) -> str:
         """Assemble the full instructions string for ComputerAgent.
 
@@ -217,6 +218,10 @@ class PersonaContext:
                 None = no limit (backward compatible default).
             token_counter: Optional function to count tokens in text.
                 Defaults to len(text) // 4 heuristic.
+            service_guidance: Optional rendered service guidance (instructions,
+                keyboard shortcuts, notes) from config/services. Placed after the
+                task context and never truncated: it is short, operator-authored,
+                and the playbook truncation budget does not apply to it.
 
         Returns:
             Coherent instruction string suitable for ComputerAgent(instructions=...).
@@ -249,6 +254,10 @@ class PersonaContext:
             task_parts.append(f"Service: {task.source_name}")
         if task_parts:
             sections.append("Task context:\n" + "\n".join(task_parts))
+
+        # Service guidance (config/services/<name>.yaml; ADR-0002)
+        if service_guidance and service_guidance.strip():
+            sections.append(service_guidance.strip())
 
         # Playbook integration (with optional token limit truncation)
         truncated_playbook = ""

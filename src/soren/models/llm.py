@@ -3,6 +3,11 @@
 from pydantic import BaseModel, Field
 
 
+def is_cloud_model(model: str) -> bool:
+    """True if a model identifier targets Ollama Cloud (the 'model:tag-cloud' convention)."""
+    return model.rstrip().endswith("-cloud")
+
+
 class LLMConfig(BaseModel):
     """Configuration for Ollama LLM (reasoning model)."""
 
@@ -23,5 +28,4 @@ class LLMConfig(BaseModel):
     @staticmethod
     def _model_is_cloud(model: str) -> bool:
         """Check if a model identifier targets Ollama Cloud."""
-        # Ollama Cloud models use the convention 'model:tag-cloud'
-        return model.rstrip().endswith("-cloud")
+        return is_cloud_model(model)

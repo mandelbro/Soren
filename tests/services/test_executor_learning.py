@@ -10,6 +10,9 @@ from soren.models.session import TaskResult
 from soren.models.task import Task
 from soren.services.task_executor import TaskExecutor
 
+# Unit tests: fake the CUA SDK (see tests/conftest.py::fake_cua_sdk).
+pytestmark = pytest.mark.usefixtures("fake_cua_sdk")
+
 
 def _make_task(
     task_id: str = "task-1",

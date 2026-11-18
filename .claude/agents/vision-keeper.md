@@ -99,10 +99,12 @@ proposal exhibits any of these, it is almost certainly CONTRADICTS or AMBIGUOUS:
    injection of any kind. The RFC §Alternatives Considered #1 explicitly
    rejects DOM-based automation on bot-detection grounds. No exceptions.
 
-2. **Cloud inference** — Anthropic API, OpenAI API, Together.ai, Replicate,
-   Hugging Face Inference Endpoints, cloud-hosted model deployments of any
-   kind. The RFC Goal 6 specifies local-only inference. This includes
-   "cloud fallback" proposals.
+2. **Non-Ollama hosted inference** — Anthropic API, OpenAI API, Together.ai,
+   Replicate, Hugging Face Inference Endpoints, or any hosted model outside
+   Ollama cloud. RFC Goal 6 (amended 2026-11-17) allows local models and
+   Ollama cloud (`-cloud`) models only. Also flag any proposal that sends
+   decrypted credentials to a cloud model's prompt, or that falls back from a
+   local model to a cloud one automatically.
 
 3. **Host-side execution** — Running the target browser, target app, or any
    task-executing code outside the Lume VM. The RFC Goal 4 requires

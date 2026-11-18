@@ -10,7 +10,7 @@ April 8, 2026
 
 ## Status
 
-Accepted
+Accepted. Current-state facts re-verified against the code on 2026-11-15 -- see [Section 11: Revision History](#11-revision-history) for what changed.
 
 ## Prior Work
 
@@ -18,7 +18,7 @@ Accepted
 
 ## RFC Reference
 
-`docs/rfc.md` -- All proposals here comply with the four architectural invariants: vision-only execution, local-only inference, VM-isolated execution, GUI credential delivery.
+`docs/rfc.md` -- All proposals here comply with the four architectural invariants: vision-only execution, local-only inference, VM-isolated execution, GUI credential delivery. *(2026-11-17: the RFC amended local-only inference to local or Ollama cloud models; see RFC §Local or Ollama Cloud Models.)*
 
 ---
 
@@ -51,7 +51,9 @@ In `TaskExecutor.execute()`, a single `ComputerAgent` instance persists across t
 Every training session on a web application requires `SOREN_CHROME_CROP_Y=100`. This is an environment variable that must be set before launch. There is no service-level configuration, no auto-detection, and no documentation that makes this obvious to a new operator.
 
 **Failure 5: Autonomous Behavior Is Absent**
-`StuckDetector` detects stuck conditions but triggers only a boolean `should_offer_training` return. There is no reasoning step -- the agent does not receive context about what it tried, what the screen shows, and what was expected before retrying. Retry repeats the identical failed action. The `auto_playbook.py` module generates playbooks from step logs but is not called after successful autonomous runs in the meta-agent cycle. Confidence fields on `FlowPlaybook` (`confidence`, `consecutive_successes`) exist but are never incremented.
+`StuckDetector` detects stuck conditions but triggers only a boolean `should_offer_training` return. There is no reasoning step -- the agent does not receive context about what it tried, what the screen shows, and what was expected before retrying. Retry repeats the identical failed action. There is no autonomous *exploration* entry point for services that have no playbook yet.
+
+> **Update (2026-11-15):** The original text also stated that `auto_playbook.py` is never called and that `FlowPlaybook` confidence fields are never incremented. Both are out of date: `SorenMetaAgent.run_cycle()` now calls `auto_generate_site_playbook()` / `auto_generate_host_playbook()` after successful runs and `PlaybookService.update_confidence()` after every run. See Section 2 and O6/O7 for the remaining gaps.
 
 ### Why This Matters
 
@@ -79,17 +81,25 @@ The `TrainingSession` class (`training_session.py`) implements a state machine: 
 
 ### Autonomous Execution Code Path
 
-**`TaskExecutor.execute_with_learning()` (line 155):** Wraps `execute()` with `StuckDetector`. Returns `(TaskResult, should_offer_training)`. On stuck: meta-agent receives `True` but does nothing beyond logging. On success: no call to `auto_playbook.py`, no confidence increment.
+**`TaskExecutor.execute_with_learning()` (line 155):** Wraps `execute()` with `StuckDetector`. Returns `(TaskResult, should_offer_training)`. The executor itself does no post-run learning; that happens in the meta-agent:
+
+- **On stuck** (`SorenMetaAgent.run_cycle()` step 7): attended mode prompts the operator via `InterventionCallbacks.on_stuck()` (train / skip / abort). Choosing *train* launches a `TrainingSession` for the execution flow (`_handle_train_intervention`). Unattended mode auto-skips after `scheduler.stuck_auto_skip_timeout`, records the source in `CycleReport.stuck_sources`, and applies a confidence floor (`UNATTENDED_CONFIDENCE_FLOOR = 0.1`). The next attended run warns about sources that were auto-skipped. *(Corrected 2026-11-15: this previously said "does nothing beyond logging".)*
+- **On success** (step 6): the meta-agent calls `auto_generate_site_playbook()` and saves it unless a human-trained (`verified_by: human`) execution flow already exists. It calls `auto_generate_host_playbook()` for new host domains found in tab-switch steps (gated by `playbooks.auto_learn_host`), and then `update_confidence()` / `update_host_confidence()`. *(Corrected 2026-11-15: this previously said "no call to `auto_playbook.py`, no confidence increment".)*
 
 **`StuckDetector`:** Detects same-screenshot, action loops, budget exhaustion. Returns `(is_stuck, reason)` but reason is not fed to the agent. Detection triggers exit, not adaptation.
 
-**`auto_playbook.py`:** `auto_generate_site_playbook()` and `auto_generate_host_playbook()` are functional but never called from the production execution path.
+**`auto_playbook.py`:** `auto_generate_site_playbook()` and `auto_generate_host_playbook()` are called from the meta-agent's post-success path (see above). They are not yet called from an exploration-specific path, because one does not exist (O6). *(Corrected 2026-11-15.)*
 
 ### Chrome Crop Implementation
 
 `vnc_screenshot.py:_chrome_crop_y()` reads `SOREN_CHROME_CROP_Y` from the environment. The `_apply_crop()` function uses PIL to remove the top N pixels from VNC screenshots before they reach UI-TARS. The click wrappers in `_scale_xy()` (line 289-303) add the crop offset back to click coordinates so they land at the correct screen position.
 
-The crop value is environment-only. The `services:` key in `config/settings.yaml` (line 36) exists but only holds `enter_key_behavior` overrides. There is no `chrome_crop_y` field on `TaskSource`, `SitePlaybook`, or any configuration model.
+The crop value is environment-only. Note that `soren.cli` calls `load_dotenv()` and the justfile uses `set dotenv-load`, so a value placed in `.env` applies to every session. The `services:` key in `config/settings.yaml` (line 36) exists but only holds `enter_key_behavior` overrides. There is no `chrome_crop_y` field on `TaskSource`, `SitePlaybook`, or any configuration model.
+
+*(Added 2026-11-15)* The per-service `enter_key_behavior` override is currently unreachable:
+- `load_settings()` does not parse `services:` or the top-level `enter_key_behavior`. `SorenSettings` has no field for either.
+- Only `patches/enter_key_config.py:get_enter_key_behavior()` reads them, and it re-opens the repo's `config/settings.yaml` directly, so `--config <path>` has no effect on Enter-key behavior.
+- The Enter-key patch calls `get_enter_key_behavior()` with no `service_id`, so only the top-level default is ever applied.
 
 ### Credential Store Wiring
 
@@ -102,6 +112,8 @@ The crop value is environment-only. The `services:` key in `config/settings.yaml
 `TaskSource` (in `models/task_source.py`) defines per-source settings: `name`, `type`, `url`, `credential_ref`, `typing_delay_ms`, `action_delay_ms`, `cooldown_between_tasks_s`, `enabled`. It is embedded in `Persona.task_sources`. There is no standalone "service" concept. The same service (Acme Panel) must be duplicated across every persona that uses it, with only `credential_ref` differing.
 
 The `services:` key in `settings.yaml` provides a different kind of per-service override (currently just `enter_key_behavior`). These two configuration surfaces are disconnected.
+
+*(Added 2026-11-15)* `typing_delay_ms`, `action_delay_ms`, and `cooldown_between_tasks_s` are declared on `TaskSource` (RFC §Per-service rate limiting) but no code reads them. Per-service rate limiting is specified but not implemented.
 
 ### Existing Components & Reuse Plan
 
@@ -246,7 +258,7 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 **Desired behavior:** When encountering a service with no playbook, the agent receives a goal ("learn to log in on acmepanel"), a URL, and credentials. It navigates, observes, reasons, acts. On success, auto-generates a playbook via `auto_playbook.py`. On stuck after reasoning retry, falls back to training mode. This is the autonomous-first loop from original discovery Section 5.
 
-**Technical gap:** No `autonomous_explore()` method exists. The meta-agent does not distinguish "no playbook" from "playbook failed." `auto_generate_site_playbook()` is never called from the production execution path.
+**Technical gap:** No `autonomous_explore()` method exists. The meta-agent does not distinguish "no playbook" from "playbook failed." *(Corrected 2026-11-15)* `auto_generate_site_playbook()` *is* called from the production path, but only after a successful `execute_with_learning()` run of an already-discovered task, and only for the `execution` flow. Nothing generates login or discovery flows autonomously.
 
 **Proposed solution:** Add `TaskExecutor.autonomous_explore(service, flow_type, persona, computer)` that composes goal-oriented CUA execution with `StuckRecovery` and calls `auto_generate_site_playbook()` on success. The meta-agent calls this BEFORE falling back to training.
 
@@ -254,11 +266,18 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 
 ### O7: Confidence Tracking
 
-**Current behavior:** `FlowPlaybook` has `confidence: float = 0.0` and `consecutive_successes: int = 0` fields. Neither is ever updated.
+**Current behavior** *(corrected 2026-11-15; previously "Neither is ever updated")*: `PlaybookService.update_confidence(source_name, flow_type, success, task_type, min_confidence)` exists, and the meta-agent calls it after every execution:
+- **Success:** `consecutive_successes += 1`, `confidence = min(1.0, confidence + 0.15)`, and `verified_at` is set to now.
+- **Failure:** `consecutive_successes` resets to 0 and `confidence = max(min_confidence, confidence - 0.2)`. The floor is 0.1 when unattended mode auto-skips a stuck source.
+- **Host playbooks:** `update_host_confidence()` applies the same +0.15/-0.2 rule.
 
 **Desired behavior:** On each successful execution, increment `consecutive_successes` and update `confidence`. After N consecutive successes (default 3), mark as stable. On failure after stability, flag for review.
 
-**Technical gap:** No code path updates these fields. `execute_with_learning` does not feed success/failure back to playbook metadata.
+**Technical gap** *(revised 2026-11-15)*: The remaining gaps are:
+- The implemented formula is additive (+0.15/-0.2), not the proposed `consecutive_successes / stability_threshold`.
+- There is no `stability_threshold` setting, and no "stable" or "flag for review" state.
+- Confidence is only updated for the `execution` flow. Login and discovery flows are never updated.
+- `execute_with_learning` itself still does not feed results back; the meta-agent does.
 
 **Proposed solution:** Add `PlaybookService.update_confidence(service_name, flow_type, success)` with increment/decrement logic. Formula: `confidence = min(1.0, consecutive_successes / stability_threshold)`. The meta-agent updates confidence after each execution. The stability threshold is a `SorenSettings` value (default 3).
 
@@ -276,6 +295,8 @@ This summary is injected into `PersonaContext.build()` alongside the step-by-ste
 **Window lifecycle:** New tab/window detected -> `VMManager.maximize_active_window()` (AppleScript sets Safari bounds to `{0, 0, 1024, 768}`) -> Optional VLM-based chrome boundary calibration (one-shot, cached per session) -> Apply crop.
 
 **Service-aware crop injection:** The training CLI and meta-agent resolve service config before starting CUA operations. The resolved `chrome_crop_y` is set via `os.environ["SOREN_CHROME_CROP_Y"]` in-process so `vnc_screenshot.py` works without modification.
+
+> **Superseded (2026-11-15) by ADR-0002:** Writing the resolved value into `os.environ` makes it indistinguishable from an operator's debug override. Once one service's value is injected, every later service in the same process would treat it as a top-precedence env override. The resolved value is instead carried in an explicit per-task service context that the patches read, and the env var remains a pure operator override. The field is also renamed `chrome_height_px` (settings use unit suffixes: `_ms`, `_s`, `_gb`). The full precedence order is in ADR-0002.
 
 ---
 
@@ -397,7 +418,14 @@ Run `soren cycle run` with the example persona enabled and configured for acmepa
 
 ### Constraint: 32GB Apple Silicon Memory Budget
 
-The model pipeline runs UI-TARS (7B, ~4GB VRAM via MLX), Qwen3-VL (8B, ~5GB via Ollama), and Gemma3 (27B, ~16GB via Ollama -- with fallback to 4B). With `OLLAMA_MAX_LOADED_MODELS=1` and `keep_alive=0`, only one Ollama model is loaded at a time. The persistent agent's message history is CPU-memory only and does not compete with VRAM.
+The model pipeline runs UI-TARS (7B, ~4GB VRAM via MLX), Qwen3-VL (8B, ~5GB via Ollama), and Gemma3 (27B, ~16GB via Ollama -- with fallback to 4B).
+
+> **Update (2026-11-15):** These model sizes no longer match `config/settings.yaml`:
+> - `llm.primary_model` is `gemma4:31b-cloud`.
+> - `llm.fallback_model` is `gemma4:e4b`.
+> - `verification.model` is `qwen3-vl:235b-cloud`.
+>
+> The `-cloud` tags are Ollama cloud-hosted models, which is also relevant to the "local-only inference" invariant cited in the RFC Reference section above. *(Resolved 2026-11-17: the RFC now allows Ollama cloud models for any role; credentials must never reach a cloud model.)* UI-TARS remains local via MLX. `meta_agent.MEMORY_ABORT_THRESHOLD_PCT` was raised to 92% "for cloud models". With `OLLAMA_MAX_LOADED_MODELS=1` and `keep_alive=0`, only one Ollama model is loaded at a time. The persistent agent's message history is CPU-memory only and does not compete with VRAM.
 
 VLM chrome calibration adds one extra Qwen3-VL inference per session (not per step). Negligible impact.
 
@@ -422,6 +450,11 @@ VLM chrome calibration adds one extra Qwen3-VL inference per session (not per st
 
 **Q1: Should `Service` definitions live in `config/services/` or `data/services/`?**
 `config/` is version-controlled and human-edited. `data/` is runtime-generated. Service definitions start as human-authored but accumulate learned context (application_context). Recommendation: `config/services/` for the base definition, with `application_context` stored on `SitePlaybook` (already in `data/playbooks/site/`) to keep the clean separation.
+
+**Resolved (2026-11-15, ADR-0002):**
+- Service definitions live in `config/services/<name>.yaml`.
+- They are project- or user-specific and gitignored, except for the shipped example (`config/services/acmepanel.yaml`), which mirrors the `config/personas/` convention. Because of this, the earlier assumption that `config/` is version-controlled does not hold for service files.
+- Training may update these files (Phase 4 of the service-config work).
 
 **Q2: How should credential references work in the service model?**
 Currently `credential_ref` is on `TaskSource` (persona-specific). With the service model, should there be a default credential on the service and an override on the persona binding? Or keep credentials strictly persona-bound? Recommendation: keep strictly persona-bound. Credentials are identity, not service knowledge.
@@ -448,8 +481,8 @@ If autonomous exploration fails on a service 3 times, should the system stop try
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Persistent agent scope | Per training flow (not per session) | A login flow and discovery flow have different contexts. Resetting between flows is cleaner. |
-| Chrome crop config location | `ServiceConfig.chrome_crop_y` | Keeps crop value with the service it belongs to. Env var stays as debug override. |
-| Service files location | `config/services/*.yaml` | Human-authored, version-controlled. Application context goes to `SitePlaybook`. |
+| Chrome crop config location | `ServiceConfig.chrome_crop_y` | Keeps crop value with the service it belongs to. Env var stays as debug override. *(Renamed `chrome_height_px` and applied via a per-task service context instead of `os.environ`; see ADR-0002.)* |
+| Service files location | `config/services/*.yaml` | Human-authored. Application context goes to `SitePlaybook`. *(2026-11-15: gitignored except the shipped example; see Q1 and ADR-0002.)* |
 | Credential handoff sharing | Extract to `soren.services.credential_utils` | Both `TaskExecutor` and `TrainingSession` need it. DRY. |
 | Step budget increase | 10 -> 20 (training), keep 50 (production) | Training steps are more exploratory than production steps. 20 gives headroom without unbounded execution. |
 | Backward compatibility | `TaskSource.service` is optional | Existing persona configs work unchanged. Migration is incremental. |
@@ -458,3 +491,20 @@ If autonomous exploration fails on a service 3 times, should the system stop try
 | Confidence increment formula | `consecutive_successes / stability_threshold`, capped at 1.0 | Simple, deterministic, easy to reason about. Stability threshold is configurable. |
 | Host playbook auto-learning | Out of scope | Depends on multiple successful runs across different tasks on the same host. Needs confidence tracking to be stable first. |
 | Tab-aware improvements | Out of scope beyond window maximization | Existing tab awareness is functional. Further improvements need real-world data on survey host behavior. |
+| Service config precedence *(2026-11-15)* | env (`SOREN_CHROME_CROP_Y`, crop only) > `settings.yaml` `services.<name>` > persona `task_sources[]` (explicitly-set fields only) > `config/services/<name>.yaml` > `settings.yaml` `service_defaults` / top-level defaults > built-in defaults | Operator overrides beat per-persona values, and per-persona values beat shared service definitions. This keeps legacy persona configs behaving exactly as before when a service file is added. See ADR-0002. |
+| Invalid service file at runtime *(2026-11-15)* | Fail the task, do not fall back | A silently-wrong crop height produces misclicks that look like model failures. |
+| Service notes in the agent prompt *(2026-11-15)* | Configurable via `include_notes_in_prompt` (default off), per service or globally via `settings.yaml` `service_defaults` | Lets operators compare results with and without notes. |
+| Config-error handling *(2026-11-15)* | New `config_error` failure category, dead-lettered immediately, no training offer, no confidence change | Retrying can't fix a config file. |
+| Keyboard shortcuts *(2026-11-15)* | Prompt hints only (`keys`, `action`, optional `when`) | The model is told what shortcuts exist and decides when to use them. Soren code does not dispatch them. Consistent with ADR-0001. |
+| Legacy sources and same-name service files *(2026-11-17)* | A source with no `service:` field picks up a service file with its name for settings it can't set inline (crop, Enter key, budget, apps, shortcuts, instructions, notes); its inline values still win | Lets existing personas benefit from a new service file without edits. Supersedes the brief's "behaves exactly as before" for that case; see ADR-0002 Decision 4. |
+| Credentials and cloud models *(2026-11-17)* | Typed credentials are redacted from step logs; cloud-bound prompts containing a handed-off credential are refused; usernames visible in screenshots are accepted, passwords never | RFC amended to allow Ollama cloud models; see RFC §Local or Ollama Cloud Models. |
+
+---
+
+## 11. Revision History
+
+| Date | Change |
+|------|--------|
+| 2026-04-08 | Initial version. |
+| 2026-11-15 | Re-verified the current-state claims against the code. All cited line numbers were still accurate. Corrected the following, which had become out of date: (1) the meta-agent *does* call `auto_generate_site_playbook()` / `auto_generate_host_playbook()` after successful runs (Failure 5, Section 2, O6); (2) `FlowPlaybook.confidence` / `consecutive_successes` *are* updated via `PlaybookService.update_confidence()`, with a different formula than proposed and for the execution flow only (Failure 5, O7); (3) stuck detection *does* trigger attended train/skip/abort intervention and unattended auto-skip with a confidence floor (Section 2); (4) the configured LLM/verification models are now Ollama `-cloud` models, not the local sizes in the memory-budget constraint (Section 7). Added facts the original missed: `load_settings()` ignores `services:`/`enter_key_behavior`, the per-service Enter-key override is unreachable, and the `TaskSource` rate-limit fields are never read (Section 2). Recorded service-config decisions (Q1, Decisions Log) and superseded the `os.environ` crop-injection design (Section 4) in favor of ADR-0002. Still accurate and unchanged: Failures 1-4 (training has no credentials, a fresh agent per step, a 10-iteration step budget, env-only crop), O2, O3, O5. |
+| 2026-11-15 (later) | Service configuration Phases 1-5 implemented; ADR-0002 accepted. O1 (service-configured chrome crop, now `chrome_height_px`) and O4 (Service data model, `config/services/*.yaml`, `TaskSource.service`) are done, including training write-back and migration (`soren services migrate`). Still open from this document: Failures 1-3 (training credentials, persistent training agent, step budget), O2, O3, O5, O6, and the remaining O7 gaps. |

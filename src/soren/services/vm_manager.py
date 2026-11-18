@@ -1,4 +1,12 @@
-"""VMManager and Lume HTTP API client for Soren VM lifecycle."""
+"""VMManager — facade for the Soren VM: lifecycle via the Lume HTTP API, plus in-guest operations.
+
+Callers use ``VMManager`` for everything VM-related. Lifecycle (start, health,
+connect, recreate) lives here; in-guest work is delegated to components that
+reach the VM through this manager as a ``GuestShell``:
+
+- ``soren.services.vm_session_prep.SessionPreparer``: apps allowlist, Spaces, required apps
+- ``soren.services.vm_browser.SafariBrowser``: Safari window reset and tab introspection
+"""
 
 from __future__ import annotations
 
@@ -10,7 +18,8 @@ from typing import Any
 from soren.models.reset import ResetResult, SessionPrepResult
 from soren.models.vm import VMConfig
 from soren.services.lume_client import LumeAPIError, LumeClient, LumeConnectionError
-from soren.services.reset_verification import verify_reset
+from soren.services.vm_browser import SafariBrowser
+from soren.services.vm_session_prep import SessionPreparer
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class VMManager:
-    """Manages the active VM lifecycle via Lume HTTP API."""
+    """Facade: VM lifecycle via the Lume HTTP API, plus session prep and Safari operations (delegated)."""
 
     def __init__(self, vm_config: VMConfig):
         self._config = vm_config
@@ -28,6 +37,8 @@ class VMManager:
         self._computer: Any = None
         self._cycle_count = 0
         self._contamination_detected = False
+        self._session_prep = SessionPreparer(self, vm_config)
+        self._browser = SafariBrowser(self)
 
     @property
     def vm_name(self) -> str:
@@ -106,59 +117,24 @@ class VMManager:
         self._computer = computer
         return computer
 
-    # --- Browser reset (osascript window management) ---
+    # --- GuestShell (used by SessionPreparer / SafariBrowser) ---
 
-    OSASCRIPT_CLOSE_WINDOWS = """\
-tell application "Safari"
-    close every window
-end tell
-"""
+    @property
+    def computer(self) -> Any:
+        return self._computer
 
-    OSASCRIPT_OPEN_FRESH_WINDOW = """\
-tell application "Safari"
-    make new document
-    activate
-end tell
-"""
+    async def ensure_connected(self) -> None:
+        await self.ensure_ready()
+        if not self._computer:
+            await self.connect_computer()
 
-    OSASCRIPT_CREATE_OR_SWITCH_SPACE = """\
-tell application "System Events"
-    key code 126 using control down
-    delay 0.7
-    try
-        tell process "Dock"
-            click (first button whose description is "add desktop")
-        end tell
-    on error
-        key code 124 using control down
-    end try
-    delay 0.4
-    key code 53
-end tell
-"""
+    async def run_osascript(self, script: str) -> str:
+        return await self._run_osascript(script)
 
-    OSASCRIPT_LIST_FOREGROUND_APPS = """\
-tell application "System Events"
-    set appNames to name of every process whose background only is false
-    return appNames as string
-end tell
-"""
-
-    OSASCRIPT_FRONTMOST_APP = """\
-tell application "System Events"
-    return name of first application process whose frontmost is true
-end tell
-"""
-
-    PROTECTED_APPS = {
-        "finder",
-        "dock",
-        "systemuiserver",
-        "controlcenter",
-        "loginwindow",
-        "notificationcenter",
-        "windowserver",
-    }
+    async def run_command(self, command: str) -> Any:
+        if not self._computer:
+            raise RuntimeError("Computer not connected. Call connect_computer() first.")
+        return await self._computer.interface.run_command(command)
 
     async def _run_osascript(self, script: str) -> str:
         """Execute osascript inside the VM. Raises on failure."""
@@ -168,252 +144,41 @@ end tell
         result = await self._computer.interface.run_command(f"osascript -e '{escaped}'")
         return (result.stdout or "").strip()
 
-    async def _run_pkill_fallback(self) -> None:
-        """Fallback: pkill Safari and reopen."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        await self._computer.interface.run_command("pkill -f Safari 2>/dev/null; sleep 1; open -a Safari")
-        await asyncio.sleep(2)
-
-    def _normalize_allowed_apps(self, required_apps: list[str] | None = None) -> set[str]:
-        """Return lowercase allowlist merged with required apps and built-in defaults."""
-        configured = {a.strip().lower() for a in self._config.allowed_apps if a and a.strip()}
-        required = {a.strip().lower() for a in (required_apps or []) if a and a.strip()}
-        # Safari is required for Soren's core browser workflows.
-        return configured | required | {"safari"} | self.PROTECTED_APPS
-
-    def _parse_app_list(self, raw: str) -> list[str]:
-        """Parse osascript app-name output into a normalized list."""
-        if not raw:
-            return []
-        return [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
-
-    async def _list_foreground_apps(self) -> list[str]:
-        raw = await self._run_osascript(self.OSASCRIPT_LIST_FOREGROUND_APPS)
-        return self._parse_app_list(raw)
-
-    async def _close_disallowed_apps(self, allowed_lower: set[str]) -> list[str]:
-        """Quit non-whitelisted GUI apps. Returns list of app names attempted."""
-        closed: list[str] = []
-        running = await self._list_foreground_apps()
-        for app in running:
-            app_lower = app.lower()
-            if app_lower in allowed_lower:
-                continue
-            try:
-                safe_app = app.replace('"', "")
-                await self._run_osascript(f'tell application "{safe_app}" to quit')
-                closed.append(app)
-            except Exception as exc:
-                logger.warning("Failed to quit app '%s' during session prep: %s", app, exc)
-        if closed and self._config.app_quit_grace_period_s > 0:
-            await asyncio.sleep(self._config.app_quit_grace_period_s)
-        return closed
-
-    async def _ensure_required_apps_open(self, required_apps: list[str] | None = None) -> None:
-        apps_to_open: set[str] = {*(required_apps or []), "Safari"}
-        for app in sorted(apps_to_open):
-            safe = app.replace('"', "").strip()
-            if not safe:
-                continue
-            await self._computer.interface.run_command(f'open -a "{safe}"')
-
-    async def _attempt_new_space(self, warnings: list[str]) -> bool:
-        if not self._config.create_new_space_per_session:
-            return False
-        retries = max(1, self._config.space_switch_retries)
-        for attempt in range(1, retries + 1):
-            try:
-                await self._run_osascript(self.OSASCRIPT_CREATE_OR_SWITCH_SPACE)
-                return True
-            except Exception as exc:
-                warnings.append(f"space attempt {attempt}/{retries} failed: {exc}")
-                await asyncio.sleep(0.5)
-        return True  # attempted, but not successful
+    # --- Session preparation (delegated to SessionPreparer) ---
 
     async def prepare_session_environment(self, required_apps: list[str] | None = None) -> SessionPrepResult:
         """Best-effort desktop isolation for a fresh automation session."""
-        start = time.monotonic()
-        warnings: list[str] = []
-        closed_apps: list[str] = []
-        remaining_disallowed: list[str] = []
-        frontmost = ""
+        return await self._session_prep.prepare_session_environment(required_apps)
 
-        await self.ensure_ready()
-        if not self._computer:
-            await self.connect_computer()
+    async def open_required_apps(self, apps: list[str]) -> None:
+        """Open ``apps`` in the VM without session-prep side effects (no Space, no quitting apps)."""
+        await self._session_prep.open_required_apps(apps)
 
-        attempted_new_space = False
-        if self._config.session_isolation_enabled:
-            attempted_new_space = await self._attempt_new_space(warnings)
-
-            allowed_lower = self._normalize_allowed_apps(required_apps)
-            try:
-                closed_apps = await self._close_disallowed_apps(allowed_lower)
-            except Exception as exc:
-                warnings.append(f"app whitelist enforcement failed: {exc}")
-
-            try:
-                await self._ensure_required_apps_open(required_apps)
-            except Exception as exc:
-                warnings.append(f"failed opening required apps: {exc}")
-
-            try:
-                running_after = await self._list_foreground_apps()
-                remaining_disallowed = [app for app in running_after if app.lower() not in allowed_lower]
-            except Exception as exc:
-                warnings.append(f"verification list apps failed: {exc}")
-
-            try:
-                frontmost = await self._run_osascript(self.OSASCRIPT_FRONTMOST_APP)
-                if frontmost and frontmost.lower() in {a.lower() for a in remaining_disallowed}:
-                    warnings.append(f"frontmost app is disallowed: {frontmost}")
-            except Exception as exc:
-                warnings.append(f"frontmost app check failed: {exc}")
-
-        duration = time.monotonic() - start
-        success = not remaining_disallowed
-        return SessionPrepResult(
-            success=success,
-            duration_seconds=duration,
-            attempted_new_space=attempted_new_space,
-            frontmost_app=frontmost,
-            closed_apps=closed_apps,
-            remaining_disallowed_apps=remaining_disallowed,
-            warnings=warnings,
-        )
+    # --- Safari windows and tabs (delegated to SafariBrowser) ---
 
     async def reset_browser_state(self) -> ResetResult:
         """Close all Safari windows and open a fresh one. Sessions preserved."""
-        start = time.monotonic()
-        warnings: list[str] = []
-        window_count = -1
-
-        await self.ensure_ready()
-        if not self._computer:
-            await self.connect_computer()
-
-        try:
-            # Phase 1: Close all Safari windows
-            try:
-                await self._run_osascript(self.OSASCRIPT_CLOSE_WINDOWS)
-            except Exception as e:
-                warnings.append(f"osascript close failed: {e}, using pkill fallback")
-                await self._run_pkill_fallback()
-            await asyncio.sleep(1)
-
-            # Phase 2: Open a single fresh window
-            try:
-                await self._run_osascript(self.OSASCRIPT_OPEN_FRESH_WINDOW)
-            except Exception as e:
-                warnings.append(f"osascript open failed: {e}, using pkill fallback")
-                await self._run_pkill_fallback()
-            await asyncio.sleep(1)
-
-            # Phase 3: Verify window count
-            issues = await verify_reset(self._computer)
-            if issues:
-                warnings.extend(issues)
-                # Retry close/open once
-                try:
-                    await self._run_osascript(self.OSASCRIPT_CLOSE_WINDOWS)
-                    await asyncio.sleep(5)
-                    await self._run_osascript(self.OSASCRIPT_OPEN_FRESH_WINDOW)
-                    await asyncio.sleep(1)
-                    issues = await verify_reset(self._computer)
-                    if issues:
-                        warnings.append(f"Retry still had issues: {issues}")
-                except Exception as e:
-                    warnings.append(f"Retry failed: {e}")
-
-            # Get final window count
-            try:
-                count_raw = await self._run_osascript('tell application "Safari" to count of windows')
-                window_count = int(count_raw) if count_raw else -1
-            except (ValueError, TypeError):
-                window_count = -1
-
-        except Exception as e:
-            warnings.append(str(e))
-
-        duration = time.monotonic() - start
-        success = window_count == 1
-        return ResetResult(
-            success=success,
-            duration_seconds=duration,
-            window_count=window_count,
-            warnings=warnings,
-        )
-
-    # --- Tab introspection ---
+        return await self._browser.reset_browser_state()
 
     async def get_tab_count(self) -> int:
         """Count open Safari tabs in window 1. Returns 0 on error."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        try:
-            raw = await self._run_osascript('tell application "Safari" to count of tabs of window 1')
-            return int(raw) if raw else 0
-        except Exception:
-            return 0
+        return await self._browser.get_tab_count()
 
     async def get_active_tab_url(self) -> str:
         """URL of the currently active Safari tab. Returns empty string on error."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        try:
-            return await self._run_osascript('tell application "Safari" to URL of current tab of window 1')
-        except Exception:
-            return ""
+        return await self._browser.get_active_tab_url()
 
     async def switch_to_tab(self, index: int) -> bool:
         """Switch to Safari tab by 1-based index. Returns True on success."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        try:
-            await self._run_osascript(
-                f'tell application "Safari" to set current tab of window 1 to tab {index} of window 1'
-            )
-            return True
-        except Exception:
-            return False
+        return await self._browser.switch_to_tab(index)
 
     async def find_tab_by_domain(self, domain: str) -> int | None:
         """Find Safari tab whose URL contains the given domain. Returns 1-based index or None."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        # Sanitize domain to prevent AppleScript injection via double-quotes
-        safe_domain = domain.replace('"', "").replace("\\", "")
-        script = (
-            f'tell application "Safari"\n'
-            f"  set tabCount to count of tabs of window 1\n"
-            f"  repeat with i from 1 to tabCount\n"
-            f"    set tabURL to URL of tab i of window 1\n"
-            f'    if tabURL contains "{safe_domain}" then\n'
-            f"      return i\n"
-            f"    end if\n"
-            f"  end repeat\n"
-            f"  return 0\n"
-            f"end tell"
-        )
-        try:
-            raw = await self._run_osascript(script)
-            idx = int(raw) if raw else 0
-            return idx if idx > 0 else None
-        except Exception:
-            return None
+        return await self._browser.find_tab_by_domain(domain)
 
     async def wait_for_new_tab(self, initial_count: int, timeout_s: float = 5.0) -> bool:
-        """Poll get_tab_count() until it exceeds initial_count or timeout. 0.5s interval."""
-        if not self._computer:
-            raise RuntimeError("Computer not connected. Call connect_computer() first.")
-        start = time.monotonic()
-        while time.monotonic() - start < timeout_s:
-            current = await self.get_tab_count()
-            if current > initial_count:
-                return True
-            await asyncio.sleep(0.5)
-        return False
+        """Poll the tab count until it exceeds initial_count or timeout (0.5s interval)."""
+        return await self._browser.wait_for_new_tab(initial_count, timeout_s)
 
     # --- VM recreation ---
 

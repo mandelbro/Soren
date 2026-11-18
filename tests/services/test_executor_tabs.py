@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soren.services.task_executor import TaskExecutor
+from soren.services.task_tabs import host_domain_of
 
 
 def _mock_settings():
@@ -58,8 +59,7 @@ class TestHandleTabTransition:
         messages: list = [{"role": "user", "content": "do task"}]
         step_log: list = []
 
-        updated_count = await executor._handle_tab_transition(
-            task=task,
+        updated_count = await executor._tab_handler(task).handle_transition(
             messages=messages,
             step_log=step_log,
             steps_taken=5,
@@ -92,8 +92,7 @@ class TestHandleTabTransition:
         messages: list = []
         step_log: list = []
 
-        count = await executor._handle_tab_transition(
-            task=_make_task(),
+        count = await executor._tab_handler(_make_task()).handle_transition(
             messages=messages,
             step_log=step_log,
             steps_taken=5,
@@ -103,8 +102,7 @@ class TestHandleTabTransition:
 
         # Second call with updated count — no new tab
         vm.wait_for_new_tab = AsyncMock(return_value=False)
-        count2 = await executor._handle_tab_transition(
-            task=_make_task(),
+        count2 = await executor._tab_handler(_make_task()).handle_transition(
             messages=messages,
             step_log=step_log,
             steps_taken=6,
@@ -123,8 +121,7 @@ class TestHandleTabTransition:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        result = await executor._handle_tab_transition(
-            task=_make_task(),
+        result = await executor._tab_handler(_make_task()).handle_transition(
             messages=[],
             step_log=step_log,
             steps_taken=5,
@@ -145,8 +142,7 @@ class TestHandleTabTransition:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        result = await executor._handle_tab_transition(
-            task=_make_task(),
+        result = await executor._tab_handler(_make_task()).handle_transition(
             messages=[],
             step_log=step_log,
             steps_taken=5,
@@ -160,8 +156,7 @@ class TestHandleTabTransition:
     @pytest.mark.asyncio
     async def test_returns_none_when_pre_tab_count_is_none(self):
         executor = _make_executor()
-        result = await executor._handle_tab_transition(
-            task=_make_task(),
+        result = await executor._tab_handler(_make_task()).handle_transition(
             messages=[],
             step_log=[],
             steps_taken=5,
@@ -178,8 +173,7 @@ class TestHandleTabTransition:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        result = await executor._handle_tab_transition(
-            task=_make_task(),
+        result = await executor._tab_handler(_make_task()).handle_transition(
             messages=[],
             step_log=step_log,
             steps_taken=5,
@@ -201,7 +195,7 @@ class TestPlatformReturn:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        await executor._handle_platform_return("betapanel.example", step_log, steps_taken=10)
+        await executor._tab_handler(_make_task()).return_to_platform("betapanel.example", step_log, steps_taken=10)
 
         vm.find_tab_by_domain.assert_called_once_with("betapanel.example")
         vm.switch_to_tab.assert_called_once_with(1)
@@ -217,7 +211,7 @@ class TestPlatformReturn:
         executor = _make_executor(vm=vm)
         step_log: list = []
 
-        await executor._handle_platform_return("betapanel.example", step_log, steps_taken=10)
+        await executor._tab_handler(_make_task()).return_to_platform("betapanel.example", step_log, steps_taken=10)
 
         assert len(step_log) == 0  # No switch logged
 
@@ -226,7 +220,7 @@ class TestPlatformReturn:
         executor = _make_executor()
         step_log: list = []
 
-        await executor._handle_platform_return(None, step_log, steps_taken=10)
+        await executor._tab_handler(_make_task()).return_to_platform(None, step_log, steps_taken=10)
 
         assert len(step_log) == 0
 
@@ -278,23 +272,9 @@ class TestDelegateToHost:
 
 class TestDomainExtraction:
     def test_extracts_domain_from_url(self):
-        executor = _make_executor()
-        assert executor._detect_host_domain("https://quickform.example/survey/123") == "quickform.example"
-        assert executor._detect_host_domain("https://www.google.com/forms/d/abc") == "www.google.com"
+        assert host_domain_of("https://quickform.example/survey/123") == "quickform.example"
+        assert host_domain_of("https://www.google.com/forms/d/abc") == "www.google.com"
 
     def test_returns_none_for_empty_url(self):
-        executor = _make_executor()
-        assert executor._detect_host_domain("") is None
-        assert executor._detect_host_domain("not-a-url") is None
-
-
-class TestStepBudgetSharing:
-    def test_remaining_budget_calculation(self):
-        executor = _make_executor()
-        executor._step_budget = 50
-        assert executor._remaining_budget(steps_taken=15) == 35
-
-    def test_remaining_budget_minimum(self):
-        executor = _make_executor()
-        executor._step_budget = 50
-        assert executor._remaining_budget(steps_taken=55) >= 1
+        assert host_domain_of("") is None
+        assert host_domain_of("not-a-url") is None

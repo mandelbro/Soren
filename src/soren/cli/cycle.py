@@ -59,7 +59,7 @@ def cycle():
 def cycle_run(config, dry_run, unattended):
     """Run a full Soren cycle: discover (if needed) -> execute one task -> finalize."""
 
-    from soren.cli.train import RichTrainingCallbacks
+    from soren.cli.training_callbacks import RichTrainingCallbacks
     from soren.services.config_loader import load_settings
     from soren.services.database import DatabaseManager
     from soren.services.llm_service import LLMService
@@ -85,7 +85,7 @@ def cycle_run(config, dry_run, unattended):
         llm = LLMService(settings)
         vm = VMManager(settings.vm)
         playbook_svc = PlaybookService(settings, llm)
-        discovery = TaskDiscovery(settings, llm, vm, backlog)
+        discovery = TaskDiscovery(settings, llm, vm, backlog, playbook_service=playbook_svc)
         executor = TaskExecutor(settings, llm, vm, playbook_service=playbook_svc)
 
         def load_personas():

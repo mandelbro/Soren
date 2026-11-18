@@ -3,7 +3,11 @@
 import click
 from dotenv import load_dotenv
 
+from soren.third_party_telemetry import default_third_party_telemetry_off
+
 load_dotenv()
+# After .env so an explicit CUA_TELEMETRY there wins; before any CUA SDK import.
+default_third_party_telemetry_off()
 
 
 @click.group()
@@ -21,6 +25,7 @@ def _register_commands() -> None:
     from soren.cli.personas import personas
     from soren.cli.playbooks import playbooks
     from soren.cli.resources import resources
+    from soren.cli.services import services
     from soren.cli.tasks import tasks
     from soren.cli.train import train
     from soren.cli.uat import uat
@@ -33,6 +38,7 @@ def _register_commands() -> None:
     cli.add_command(personas)
     cli.add_command(playbooks)
     cli.add_command(resources)
+    cli.add_command(services)
     cli.add_command(tasks)
     cli.add_command(train)
     cli.add_command(uat)

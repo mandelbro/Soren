@@ -149,7 +149,7 @@ class TestShouldOfferTrainingLogsStuck:
         failed_result = TaskResult(success=False, error="Stuck detected: action loop")
         agent = build_meta_agent(task_result=failed_result, should_offer_training=True)
 
-        with patch("soren.services.meta_agent.asyncio.sleep", new_callable=AsyncMock):
+        with patch("soren.services.stuck_intervention.asyncio.sleep", new_callable=AsyncMock):
             report = await agent.run_cycle()
 
         assert report.stuck_detected is True

@@ -112,6 +112,21 @@ list-playbooks:
 show-playbook SERVICE:
     uv run soren playbooks show {{SERVICE}}
 
+# Service definitions (config/services/*.yaml; see docs/adr/0002-service-configuration.md)
+list-services:
+    uv run soren services list
+
+# Usage: just show-service acmepanel [--persona ID] [--prompt]
+show-service NAME *ARGS:
+    uv run soren services show {{NAME}} {{ARGS}}
+
+validate-services:
+    uv run soren services validate
+
+# Create config/services files from inline persona values (never edits personas). Usage: just migrate-services [--dry-run]
+migrate-services *ARGS:
+    uv run soren services migrate {{ARGS}}
+
 # Persona management
 validate-personas:
     uv run soren personas validate
@@ -145,6 +160,10 @@ format-check:
 # Format code
 format:
     uv run python -m ruff format src/ tests/
+
+# File-size policy: report files over 400 lines; fail over 500 (see scripts/check_file_sizes.py)
+file-sizes:
+    uv run python scripts/check_file_sizes.py
 
 # Type check
 typecheck:

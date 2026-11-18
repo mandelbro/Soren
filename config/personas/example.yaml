@@ -19,11 +19,13 @@ preferences:
   response_style: balanced
   formality: professional
   decision_speed: moderate
+# Each source points at a service definition in config/services/<name>.yaml,
+# which holds its url, type, discovery hint and settings. Credentials stay here
+# because they belong to the persona. Fields set inline (e.g. url:) override the
+# service file; old-style sources with no `service:` and everything inline still
+# work (see docs/adr/0002-service-configuration.md).
 task_sources:
-  - name: acmepanel
-    type: survey_platform
-    url: https://acmepanel.example/home
+  - service: acmepanel
     credential_ref: acmepanel
     enabled: true
-    discovery_hint: "Look for available surveys showing reward amount and estimated time"
 enabled: false

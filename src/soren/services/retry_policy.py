@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 DEFAULT_BACKOFF = [5, 30, 120]
 DEFAULT_MAX_RETRIES = 3
 
+# Error-message prefix for service configuration problems (ADR-0002). Checked
+# before keyword matching: config/pydantic text can contain words like "model".
+CONFIG_ERROR_PREFIX = "service_config_error:"
+
 FAILURE_CATEGORIES = [
+    "config_error",
     "timeout",
     "vlm_error",
     "login_failure",
@@ -23,6 +28,9 @@ FAILURE_CATEGORIES = [
     "vm_error",
     "unknown",
 ]
+
+# Failures that retrying cannot fix: dead-letter on the first occurrence.
+NON_RETRYABLE_FAILURES = frozenset({"config_error"})
 
 
 class RetryAction(BaseModel):
@@ -37,7 +45,13 @@ class RetryAction(BaseModel):
 
 def classify_failure(error: Exception | str) -> str:
     """Categorize failure reason for pattern analysis."""
+    from soren.models.service import ServiceConfigError
+
+    if isinstance(error, ServiceConfigError):
+        return "config_error"
     msg = str(error).lower() if isinstance(error, Exception) else str(error).lower()
+    if msg.startswith(CONFIG_ERROR_PREFIX):
+        return "config_error"
     if "timeout" in msg or "timed out" in msg:
         return "timeout"
     if "vlm" in msg or "vision" in msg or "model" in msg or "ollama" in msg or "mlx" in msg:
@@ -67,7 +81,7 @@ class RetryPolicy:
         attempt = (task.attempt_count or 0) + 1
         max_retries = task.max_retries or self._max_retries
 
-        if attempt >= max_retries:
+        if attempt >= max_retries or failure_reason in NON_RETRYABLE_FAILURES:
             return RetryAction(action="dead_letter", next_eligible_at=None, backoff_minutes=None)
 
         idx = min(attempt - 1, len(self._backoff) - 1)

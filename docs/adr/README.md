@@ -95,6 +95,7 @@ RFC content.
 | # | Title | Status | Date | RFC sections |
 |---|-------|--------|------|--------------|
 | [0001](0001-training-mode-keyboard-shortcut-policy.md) | Training-mode keyboard shortcut policy | Accepted | 2026-04-08 | §Alternatives Considered #1 |
+| [0002](0002-service-configuration.md) | Service configuration files and precedence | Accepted | 2026-11-15 | §Per-service rate limiting; §Alternatives Considered #1 |
 
 ## When NOT to write an ADR
 

@@ -1,10 +1,15 @@
-"""PlaybookService — unified playbook management with YAML site/host/base CRUD and legacy markdown support."""
+"""PlaybookService — facade for playbook management.
+
+Callers use this one class for everything playbook-related: YAML site/host/base
+CRUD, cascading resolution (site > host > base), prompt formatting, confidence
+tracking, and the deprecated markdown API. The markdown API is implemented by
+``soren.services.markdown_playbooks.MarkdownPlaybookStore``, and its names are
+re-exported here for backward compatibility.
+"""
 
 from __future__ import annotations
 
-import re
 import warnings
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,6 +26,15 @@ from soren.models.site_playbook import (
     SitePlaybook,
     load_and_validate,
 )
+from soren.services.markdown_playbooks import (
+    SECTION_HEADER,
+    SOREN_MARKER,
+    TASK_SECTION_MAP,
+    MarkdownPlaybookStore,
+    PlaybookInfo,
+    PlaybookUpdate,
+)
+from soren.services.naming import safe_service_name
 from soren.services.playbook_formatting import (
     flow_to_prompt_instructions,
     format_base_content,
@@ -33,51 +47,19 @@ if TYPE_CHECKING:
     from soren.services.config_loader import SorenSettings
     from soren.services.llm_service import LLMService
 
-SOREN_MARKER = re.compile(r"<!--\s*soren-generated:\s*([^,]+),\s*task:\s*([^>]+)\s*-->", re.IGNORECASE)
-SECTION_HEADER = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 
-# Task type -> section headers to include (case-insensitive match)
-TASK_SECTION_MAP: dict[str, list[str]] = {
-    "survey": ["login", "survey completion", "survey"],
-    "email_reply": ["login", "email", "email reply"],
-    "form_submission": ["login", "form", "form submission"],
-    "proposal": ["login", "proposal"],
-}
-
-
-@dataclass
-class PlaybookInfo:
-    """Metadata for a playbook file."""
-
-    service_name: str
-    file_path: Path
-    file_size: int
-    last_modified: str
-    section_count: int
-
-
-@dataclass
-class PlaybookUpdate:
-    """Result of a write-back operation."""
-
-    service_name: str
-    sections_added: int
-    sections_updated: int
-    dry_run: bool
-    preview: str | None = None
-
-
-def _iso_now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _safe_service_name(name: str) -> str:
-    """Sanitize service name for use as filename."""
-    return re.sub(r"[^\w\-]", "_", name or "default").strip("_") or "default"
+__all__ = [
+    "SECTION_HEADER",
+    "SOREN_MARKER",
+    "TASK_SECTION_MAP",
+    "PlaybookInfo",
+    "PlaybookService",
+    "PlaybookUpdate",
+]
 
 
 class PlaybookService:
-    """Manages per-service playbook markdown files with LLM write-back and YAML CRUD."""
+    """Facade: YAML site/host/base playbooks plus the deprecated markdown playbooks (delegated)."""
 
     def __init__(
         self,
@@ -91,6 +73,7 @@ class PlaybookService:
         base = settings.playbooks.base_dir
         self._dir = playbooks_dir or Path.cwd() / base
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._markdown = MarkdownPlaybookStore(settings, llm, self._dir)
 
         # Tier directories for YAML playbooks
         self._site_dir = Path(settings.playbooks.site_playbooks_dir)
@@ -104,14 +87,14 @@ class PlaybookService:
 
     def load_site(self, source_name: str) -> SitePlaybook | None:
         """Load a site playbook from YAML. Returns None if not found."""
-        path = self._site_dir / f"{_safe_service_name(source_name)}.yaml"
+        path = self._site_dir / f"{safe_service_name(source_name)}.yaml"
         if not path.exists():
             return None
         return load_and_validate(path)
 
     def save_site(self, playbook: SitePlaybook) -> Path:
         """Serialize and write a site playbook to YAML."""
-        path = self._site_dir / f"{_safe_service_name(playbook.source_name)}.yaml"
+        path = self._site_dir / f"{safe_service_name(playbook.source_name)}.yaml"
         data = serialize_for_yaml(playbook.model_dump(exclude_none=True))
         path.write_text(yaml.dump(data, sort_keys=False, default_flow_style=False), encoding="utf-8")
         return path
@@ -160,7 +143,7 @@ class PlaybookService:
 
     def delete_site(self, source_name: str) -> bool:
         """Delete a site playbook file. Returns True if it existed."""
-        path = self._site_dir / f"{_safe_service_name(source_name)}.yaml"
+        path = self._site_dir / f"{safe_service_name(source_name)}.yaml"
         if path.exists():
             path.unlink()
             return True
@@ -170,7 +153,7 @@ class PlaybookService:
 
     def load_host(self, host_domain: str) -> HostPlaybook | None:
         """Load a host playbook from YAML. Returns None if not found."""
-        safe = _safe_service_name(host_domain)
+        safe = safe_service_name(host_domain)
         path = self._host_dir / f"{safe}.yaml"
         if not path.exists():
             return None
@@ -179,7 +162,7 @@ class PlaybookService:
 
     def save_host(self, playbook: HostPlaybook) -> Path:
         """Serialize and write a host playbook to YAML."""
-        safe = _safe_service_name(playbook.host_domain)
+        safe = safe_service_name(playbook.host_domain)
         path = self._host_dir / f"{safe}.yaml"
         data = serialize_for_yaml(playbook.model_dump(exclude_none=True))
         path.write_text(yaml.dump(data, sort_keys=False, default_flow_style=False), encoding="utf-8")
@@ -189,7 +172,7 @@ class PlaybookService:
 
     def load_base(self, task_type: str) -> BasePlaybook | None:
         """Load a base playbook from YAML. Returns None if not found."""
-        path = self._base_dir_path / f"{_safe_service_name(task_type)}.yaml"
+        path = self._base_dir_path / f"{safe_service_name(task_type)}.yaml"
         if not path.exists():
             return None
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -337,65 +320,23 @@ class PlaybookService:
 
         self.save_host(host)
 
+    # --- Legacy markdown playbooks (deprecated; delegated to MarkdownPlaybookStore) ---
+
     def load(self, service_name: str) -> str | None:
         """Read playbook content for a service. Returns None if file does not exist.
 
         .. deprecated:: Use :meth:`load_site` or :meth:`resolve` instead.
         """
-        warnings.warn(
-            "load() is deprecated, use load_site() or resolve()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        safe = _safe_service_name(service_name)
-        path = self._dir / f"{safe}.md"
-        if not path.exists():
-            return None
-        return path.read_text(encoding="utf-8")
+        warnings.warn("load() is deprecated, use load_site() or resolve()", DeprecationWarning, stacklevel=2)
+        return self._markdown.load(service_name)
 
     def get_relevant_sections(self, content: str, task_type: str) -> str:
         """Extract sections relevant to the task type (e.g., Login, Survey Completion).
 
         .. deprecated:: Use :meth:`resolve` instead.
         """
-        warnings.warn(
-            "get_relevant_sections() is deprecated, use resolve()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not content or not content.strip():
-            return ""
-        headers_to_find = TASK_SECTION_MAP.get(task_type, ["login"])
-        sections: list[str] = []
-        current_header: str | None = None
-        current_body: list[str] = []
-        lines = content.split("\n")
-
-        for line in lines:
-            m = SECTION_HEADER.match(line)
-            if m:
-                if current_header:
-                    joined = "\n".join(current_body).strip()
-                    if joined:
-                        sections.append(f"## {current_header}\n{joined}")
-                header_lower = m.group(1).strip().lower()
-                current_header = m.group(1).strip()
-                current_body = []
-                if any(h in header_lower for h in headers_to_find):
-                    pass
-                else:
-                    current_header = None
-            elif current_header is not None:
-                current_body.append(line)
-
-        if current_header and current_body:
-            joined = "\n".join(current_body).strip()
-            if joined:
-                sections.append(f"## {current_header}\n{joined}")
-
-        if sections:
-            return "\n\n".join(sections)
-        return content.strip()
+        warnings.warn("get_relevant_sections() is deprecated, use resolve()", DeprecationWarning, stacklevel=2)
+        return self._markdown.get_relevant_sections(content, task_type)
 
     async def write_back(
         self,
@@ -404,116 +345,12 @@ class PlaybookService:
         step_log: list[dict[str, Any]],
         dry_run: bool = False,
     ) -> PlaybookUpdate:
-        """Summarize execution steps via LLM and append/update playbook sections.
+        """Summarize execution steps via LLM and append/update markdown playbook sections.
 
         Human-edited content outside <!-- soren-generated --> markers is preserved.
         """
-        safe = _safe_service_name(service_name)
-        path = self._dir / f"{safe}.md"
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
-
-        steps_text = self._format_steps_for_llm(step_log)
-        prompt = self._build_summarization_prompt(task, steps_text)
-        model = self._settings.llm.primary_model
-        summary = await self._llm.generate(prompt=prompt, model=model)
-
-        timestamp = _iso_now()
-        task_id = task.id or "unknown"
-        marker = f"<!-- soren-generated: {timestamp}, task: {task_id} -->"
-        section_title = task.task_type or "Task"
-        new_section = f"\n\n## {section_title} (auto-generated)\n\n{marker}\n{summary.strip()}\n"
-
-        sections_added = 0
-        sections_updated = 0
-
-        if not existing.strip():
-            new_content = f"# {service_name} Playbook\n{new_section}"
-            sections_added = 1
-        else:
-            updated = self._find_and_replace_generated(existing, section_title, new_section)
-            if updated is not None:
-                new_content = updated
-                sections_updated = 1
-            else:
-                new_content = existing.rstrip() + new_section
-                sections_added = 1
-
-        if not dry_run:
-            path.write_text(new_content, encoding="utf-8")
-
-        return PlaybookUpdate(
-            service_name=service_name,
-            sections_added=sections_added,
-            sections_updated=sections_updated,
-            dry_run=dry_run,
-            preview=new_content if dry_run else None,
-        )
-
-    def _find_and_replace_generated(self, content: str, section_title: str, new_section: str) -> str | None:
-        """Find a generated section for this title and replace it. Returns None if not found."""
-        title_lower = section_title.lower()
-        for m in SOREN_MARKER.finditer(content):
-            section_start = content.rfind("\n## ", 0, m.start())
-            if section_start >= 0:
-                header = content[section_start : m.start()]
-                if title_lower in header.lower():
-                    end = content.find("\n\n## ", m.end())
-                    if end == -1:
-                        end = len(content)
-                    before = content[:section_start].rstrip()
-                    after = content[end:].lstrip()
-                    replacement = new_section.strip()
-                    sep_before = "\n\n" if before else ""
-                    sep_after = "\n\n" if after else ""
-                    return before + sep_before + replacement + sep_after + after
-        return None
-
-    def _format_steps_for_llm(self, step_log: list[dict[str, Any]]) -> str:
-        """Format step log for LLM summarization."""
-        lines: list[str] = []
-        for i, s in enumerate(step_log, 1):
-            action = s.get("action_type", "unknown")
-            data = s.get("action_data", {})
-            reasoning = s.get("vlm_reasoning", "")
-            lines.append(f"Step {i}: {action}")
-            if data:
-                lines.append(f"  Data: {data}")
-            if reasoning:
-                lines.append(f"  Reasoning: {reasoning[:300]}")
-        return "\n".join(lines) if lines else "No steps recorded."
-
-    def _build_summarization_prompt(self, task: Task, steps_text: str) -> str:
-        """Build prompt for LLM to extract reusable instructions from step log."""
-        return f"""You are summarizing a successful task execution into reusable playbook instructions.
-
-Task: {task.title or task.description or "Unknown"}
-Task type: {task.task_type or "task"}
-Service: {task.source_name or "unknown"}
-
-Execution steps:
-{steps_text}
-
-Produce concise, step-by-step instructions that a future agent can follow
-to complete similar tasks on this service. Use imperative mood.
-Focus on what worked. Do not include timestamps or step numbers.
-Output plain markdown only."""
+        return await self._markdown.write_back(service_name, task, step_log, dry_run=dry_run)
 
     def list_playbooks(self) -> list[PlaybookInfo]:
-        """Enumerate all playbook files with metadata."""
-        infos: list[PlaybookInfo] = []
-        if not self._dir.exists():
-            return infos
-        for path in sorted(self._dir.glob("*.md")):
-            stat = path.stat()
-            content = path.read_text(encoding="utf-8")
-            section_count = len(SECTION_HEADER.findall(content))
-            infos.append(
-                PlaybookInfo(
-                    service_name=path.stem,
-                    file_path=path,
-                    file_size=stat.st_size,
-                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    section_count=section_count,
-                )
-            )
-        return infos
+        """Enumerate all markdown playbook files with metadata."""
+        return self._markdown.list_playbooks()

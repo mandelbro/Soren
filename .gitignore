@@ -44,6 +44,10 @@ data/*.json
 config/personas/*.yaml
 !config/personas/example.yaml
 
+# Service definitions are project/user specific; only the example is shared
+config/services/*
+!config/services/acmepanel.yaml
+
 # Credentials (NEVER commit)
 config/*credentials*
 data/*credentials*

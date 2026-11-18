@@ -7,7 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soren.models.vm import VMConfig
+from soren.services import vm_browser as _vm_browser_module
+from soren.services import vm_manager as _vm_manager_module
 from soren.services.vm_manager import VMManager
+
+
+@pytest.fixture(autouse=True)
+def _virtual_clock(fake_clock):
+    """Run this module's sleeps/timeouts on a virtual clock (tests/fake_clock.py)."""
+    return fake_clock(_vm_manager_module, _vm_browser_module)
 
 
 @pytest.fixture
@@ -119,12 +127,12 @@ class TestWaitForNewTab:
             call_count += 1
             return 1 if call_count == 1 else 2
 
-        with patch.object(vm_manager, "get_tab_count", side_effect=mock_get_tab_count):
+        with patch.object(vm_manager._browser, "get_tab_count", side_effect=mock_get_tab_count):
             result = await vm_manager.wait_for_new_tab(initial_count=1, timeout_s=2.0)
         assert result is True
 
     @pytest.mark.asyncio
     async def test_returns_false_on_timeout(self, vm_manager):
-        with patch.object(vm_manager, "get_tab_count", new_callable=AsyncMock, return_value=1):
+        with patch.object(vm_manager._browser, "get_tab_count", new_callable=AsyncMock, return_value=1):
             result = await vm_manager.wait_for_new_tab(initial_count=1, timeout_s=0.5)
         assert result is False
