@@ -111,8 +111,9 @@ async def test_auto_playbook_prompt_has_no_credentials(tmp_path: Path) -> None:
     assert USERNAME not in prompt
 
 
-async def test_handed_off_credentials_are_registered_for_the_cloud_backstop(tmp_path: Path) -> None:
+async def test_handed_off_password_is_registered_for_the_cloud_backstop(tmp_path: Path) -> None:
     await _execute_login(tmp_path)
 
     assert credential_redaction.contains_registered_secret(f"x {PASSWORD} y")
-    assert credential_redaction.contains_registered_secret(f"x {USERNAME} y")
+    # A username may reach a cloud model via screenshots/extracted text (RFC); it must not block those calls.
+    assert not credential_redaction.contains_registered_secret(f"Welcome back, {USERNAME}")

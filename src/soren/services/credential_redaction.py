@@ -6,12 +6,17 @@ locally running models (UI-TARS needs them to log in). Two layers enforce it:
 - ``CredentialRedactor`` replaces credential values in execution data (step
   logs, reasoning) with ``{credential:<field>}`` where that data is recorded,
   so every later reader (write-back, auto-playbooks, reports, memory) is clean.
-- A process-wide registry of handed-off values lets ``LLMService`` refuse any
-  cloud-bound prompt that still contains one (the backstop).
+  Passwords match anywhere (a false alarm is safe); usernames match only as
+  whole tokens, so a short one like ``sam`` leaves "same" alone.
+- A process-wide registry of handed-off passwords lets ``LLMService`` refuse
+  any cloud-bound prompt that still contains one (the backstop). Usernames are
+  not registered: the RFC allows them on screen, so they can legitimately reach
+  a cloud model through screenshots and text extracted from them.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -19,6 +24,9 @@ from typing import Any
 MIN_SECRET_LENGTH = 3
 
 _REGISTERED: set[str] = set()
+
+# Fields matched only as whole tokens (not inside a longer word or address), and kept out of the backstop.
+_TOKEN_FIELDS = frozenset({"username"})
 
 
 class CredentialLeakError(RuntimeError):
@@ -29,25 +37,36 @@ def _usable(value: object) -> bool:
     return isinstance(value, str) and len(value.strip()) >= MIN_SECRET_LENGTH
 
 
+def _pattern(field: str, value: str) -> re.Pattern[str]:
+    escaped = re.escape(value)
+    if field in _TOKEN_FIELDS:
+        # Not inside a longer word/address; a sentence-ending "." after it is fine.
+        return re.compile(rf"(?<![\w@.]){escaped}(?!\.?[\w@])")
+    return re.compile(escaped)
+
+
 class CredentialRedactor:
     """Replaces credential values (``{field: value}``) with ``{credential:<field>}`` placeholders."""
 
     def __init__(self, secrets: Mapping[str, str]) -> None:
-        pairs = [(value, f"{{credential:{field}}}") for field, value in secrets.items() if _usable(value)]
+        usable = [(field, value) for field, value in secrets.items() if _usable(value)]
         # Longest first, so a password that contains the username is replaced whole.
-        self._pairs = sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+        usable.sort(key=lambda item: len(item[1]), reverse=True)
+        self._rules = [(_pattern(field, value), f"{{credential:{field}}}") for field, value in usable]
+        self._backstop = [value for field, value in usable if field not in _TOKEN_FIELDS]
 
     @property
-    def values(self) -> list[str]:
-        return [value for value, _ in self._pairs]
+    def backstop_values(self) -> list[str]:
+        """Values that must never reach a cloud model in any form (passwords), for ``register_secrets``."""
+        return list(self._backstop)
 
     def redact(self, data: Any) -> Any:
         """A copy of ``data`` (str, dict, list, tuple, nested) with every credential value replaced."""
-        if not self._pairs:
+        if not self._rules:
             return data
         if isinstance(data, str):
-            for value, placeholder in self._pairs:
-                data = data.replace(value, placeholder)
+            for pattern, placeholder in self._rules:
+                data = pattern.sub(lambda _m, p=placeholder: p, data)
             return data
         if isinstance(data, dict):
             return {key: self.redact(item) for key, item in data.items()}
@@ -59,7 +78,7 @@ class CredentialRedactor:
 
 
 def register_secrets(values: Iterable[str]) -> None:
-    """Remember credential values handed to an agent so cloud-bound prompts can be checked for them."""
+    """Remember passwords handed to an agent so cloud-bound prompts can be checked for them."""
     _REGISTERED.update(value for value in values if _usable(value))
 
 

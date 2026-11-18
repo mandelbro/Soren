@@ -65,6 +65,32 @@ class TestCredentialRedactor:
 
         assert redactor.redact("about a bad abacus") == "about a bad abacus"
 
+    def test_short_username_only_matches_as_a_whole_token(self) -> None:
+        """Username 'sam' must not turn "the same sample" into placeholders."""
+        redactor = CredentialRedactor({"username": "sam", "password": PASSWORD})
+
+        assert redactor.redact("the same sample page") == "the same sample page"
+        assert redactor.redact("logged in as sam.") == "logged in as {credential:username}."
+        assert redactor.redact('typed "sam" into Email') == 'typed "{credential:username}" into Email'
+
+    def test_email_username_is_not_matched_inside_a_longer_address(self) -> None:
+        redactor = CredentialRedactor({"username": "sam@example.com"})
+
+        assert redactor.redact("wrote to bigsam@example.com") == "wrote to bigsam@example.com"
+        assert redactor.redact("signed in: sam@example.com") == "signed in: {credential:username}"
+
+    def test_password_is_matched_anywhere_even_inside_other_text(self) -> None:
+        """Passwords stay strict: a false alarm is safe, a miss leaks the secret."""
+        redactor = CredentialRedactor({"password": PASSWORD})
+
+        assert redactor.redact(f"typed{PASSWORD}.") == "typed{credential:password}."
+
+    def test_only_passwords_are_backstop_values(self) -> None:
+        """Usernames may legitimately reach a cloud model (visible on screen, RFC), so the backstop ignores them."""
+        redactor = CredentialRedactor({"username": USERNAME, "password": PASSWORD})
+
+        assert redactor.backstop_values == [PASSWORD]
+
     def test_non_string_scalars_pass_through(self) -> None:
         redactor = CredentialRedactor({"password": PASSWORD})
 
@@ -101,6 +127,14 @@ class TestCloudPromptBackstop:
         with patch.object(llm._client, "generate", new_callable=AsyncMock) as send:
             send.return_value = MagicMock(response="ok")
             assert await llm.generate(f"typed {PASSWORD}", model="gemma3:12b") == "ok"
+
+    async def test_short_password_does_not_block_unrelated_words(self) -> None:
+        """Registration is per value; a registered value only blocks prompts that contain it."""
+        register_secrets(["pa55word"])
+        llm = self._llm()
+        with patch.object(llm._client, "generate", new_callable=AsyncMock) as send:
+            send.return_value = MagicMock(response="ok")
+            assert await llm.generate("the same sample password field", model="gemma4:31b-cloud") == "ok"
 
     async def test_cloud_model_accepts_prompt_without_secrets(self) -> None:
         register_secrets([PASSWORD])

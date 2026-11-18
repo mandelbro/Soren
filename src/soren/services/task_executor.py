@@ -217,7 +217,7 @@ class TaskExecutor:
         )
         # The local agent gets the credentials above; everything recorded from its run is redacted.
         redactor = CredentialRedactor(self._credentials.secrets(task, persona))
-        register_secrets(redactor.values)
+        register_secrets(redactor.backstop_values)
         messages = [{"role": "user", "content": task.description or f"Complete: {task.title}"}]
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
