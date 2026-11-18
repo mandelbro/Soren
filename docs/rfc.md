@@ -513,7 +513,8 @@ Ollama cloud is the only hosted option. Other hosted LLM providers remain out of
 
 **Privacy rules that still hold:**
 
-- **Credentials never go to a cloud model.** Decrypted credentials may appear only in prompts to locally running models. Anything built from execution data and sent to a cloud model (step logs, playbook write-back, verification) must redact typed credential values first.
+- **Credentials never go to a cloud model as text.** Decrypted credentials may appear only in prompts to locally running models. Anything built from execution data and sent to a cloud model (step logs, playbook write-back, verification) must redact typed credential values first. `soren.services.credential_redaction` does this where the step log is recorded, and `LLMService` refuses any cloud-bound prompt that still contains a handed-off credential.
+- **Screenshots may show a username, never a password.** Screenshots sent to a cloud vision model (discovery extraction, tier-2 verification) can show a typed username or email on a login screen. That is accepted: text redaction can't cover pixels, and verification needs those screenshots. Password fields are masked by the page; anything that would reveal a password on screen (a "show password" toggle, a password echoed into a visible field) must not be used.
 - **The operator chooses where data goes.** Whether a role runs locally or in the cloud is set explicitly per role in `config/settings.yaml`. There is no automatic fallback from a local model to a cloud one.
 
 **Trade-off**: With a cloud model, its prompts and screenshots (task content, persona-shaped text, page contents) leave the machine for Ollama's service. Operators who need everything on-device configure local models for every role; this costs capability on complex reasoning and adds memory pressure on a 32 GB host.

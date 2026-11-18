@@ -83,9 +83,15 @@ somewhere to record what it learns about one.
 
 4. **Personas bind to services** with `task_sources[].service: <name>`. When
    `name` is omitted it defaults to the service name. Credentials stay
-   persona-bound (`credential_ref`). Legacy inline sources keep working
-   unchanged: with no `service:` field, the source name is used to look up an
-   optional service file.
+   persona-bound (`credential_ref`). Legacy inline sources keep loading, and
+   their inline values keep winning: with no `service:` field, the source name
+   is used to look up an optional service file. *(Clarified 2026-11-17.)* If a
+   service file with that name exists, a legacy source **does** pick up the
+   settings it can't set inline: chrome height, Enter-key behavior, step
+   budget, required apps, shortcuts, instructions and notes. This is
+   deliberate: it is how an existing persona benefits from a new service file
+   without being edited. To keep a legacy source fully unchanged, don't create
+   a file with its name (or rename the source).
 
 5. **Strict new files, lenient legacy surfaces.**
    - Service files reject unknown keys and invalid values. An invalid file,
@@ -129,7 +135,8 @@ somewhere to record what it learns about one.
 - **The precedence order** keeps existing deployments behaving exactly as
   before:
   - Explicit persona values beat a newly added service file, so adding a file
-    never changes an existing persona's behavior.
+    never changes a value the persona already sets. Settings a persona can't
+    set inline do come from a same-name file (see Decision 4).
   - The operator's `settings.yaml` overrides and the env var keep their
     "override" meaning.
   - Top-level `enter_key_behavior` stays a default, as the legacy reader

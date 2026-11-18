@@ -496,6 +496,8 @@ If autonomous exploration fails on a service 3 times, should the system stop try
 | Service notes in the agent prompt *(2026-11-15)* | Configurable via `include_notes_in_prompt` (default off), per service or globally via `settings.yaml` `service_defaults` | Lets operators compare results with and without notes. |
 | Config-error handling *(2026-11-15)* | New `config_error` failure category, dead-lettered immediately, no training offer, no confidence change | Retrying can't fix a config file. |
 | Keyboard shortcuts *(2026-11-15)* | Prompt hints only (`keys`, `action`, optional `when`) | The model is told what shortcuts exist and decides when to use them. Soren code does not dispatch them. Consistent with ADR-0001. |
+| Legacy sources and same-name service files *(2026-11-17)* | A source with no `service:` field picks up a service file with its name for settings it can't set inline (crop, Enter key, budget, apps, shortcuts, instructions, notes); its inline values still win | Lets existing personas benefit from a new service file without edits. Supersedes the brief's "behaves exactly as before" for that case; see ADR-0002 Decision 4. |
+| Credentials and cloud models *(2026-11-17)* | Typed credentials are redacted from step logs; cloud-bound prompts containing a handed-off credential are refused; usernames visible in screenshots are accepted, passwords never | RFC amended to allow Ollama cloud models; see RFC §Local or Ollama Cloud Models. |
 
 ---
 
