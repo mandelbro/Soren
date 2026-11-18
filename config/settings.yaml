@@ -30,11 +30,18 @@ verification:
   provider: "ollama"
   model: "qwen3-vl:235b-cloud"
 
-# Enter key patch: "enter_only" (default) or "escape_enter" (Escape before Enter for Slack etc.)
-enter_key_behavior: "enter_only"
+# Service configuration (docs/adr/0002-service-configuration.md). Each service
+# is defined in config/services/<name>.yaml; these two blocks take the same
+# fields as that file's `config:` section.
+#
+# Defaults for every service (service files override these):
+service_defaults:
+  # Enter key patch: "enter_only" (default) or "escape_enter" (Escape before Enter for Slack etc.)
+  enter_key_behavior: "enter_only"
+  # include_notes_in_prompt: false   # true = also give service `notes` to the agent
 
+# Per-service overrides (beat service files and persona values):
 services:
-  # Per-service override example:
   # slack:
   #   enter_key_behavior: "escape_enter"
 
@@ -50,8 +57,10 @@ vm:
   # stopped VM, so the resolution can be changed without rebuilding
   # soren-pristine (e.g. `lume set soren-pristine --display 1280x800`); Soren
   # does not do this automatically yet.
-  # For now we accept 1024x768 and rely on SOREN_CHROME_CROP_Y=100 to give
-  # UI-TARS a 1024x668 webpage-only view (see ADR-0001).
+  # For now we accept 1024x768 and rely on a 100px chrome crop to give
+  # UI-TARS a 1024x668 webpage-only view (see ADR-0001). Set it per service
+  # with `chrome_height_px` in config/services/<name>.yaml (ADR-0002);
+  # SOREN_CHROME_CROP_Y still works as a global debug override.
   recreate_every_n_cycles: 10
   lume_url: "http://localhost:7777"
   # Session isolation: keep desktop clean for vision workflows.

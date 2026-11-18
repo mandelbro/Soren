@@ -1,0 +1,51 @@
+# Example service definition. Copy it to config/services/<name>.yaml for each
+# website or desktop app your agents use. Files in this folder other than this
+# one are local and gitignored: they are project/user specific.
+#
+# Personas reference a service by name:
+#   task_sources:
+#     - service: acmepanel
+#       credential_ref: acmepanel   # credentials always stay persona-bound
+# Legacy personas that keep url/type inline still work; inline values that are
+# set explicitly override this file. Full precedence: docs/adr/0002-*.md.
+#
+# Prefer the `notes` field over `#` comments for knowledge about the service:
+# notes are data, so they survive when Soren rewrites this file (e.g. training).
+
+version: 1
+name: acmepanel                  # optional; must match the file name
+type: survey_platform            # discovery adapter: survey_platform | email | generic_form
+url: https://acmepanel.example/home
+discovery_hint: "Look for available surveys showing reward amount and estimated time"
+
+notes: |
+  Acme Panel is a survey platform. Logging in opens a modal that asks for the
+  email first, then the password on a second screen.
+
+config:
+  # Pixels of browser/window chrome above the usable content area. Cropped
+  # from the agent's screenshots so it only sees the page. 100 fits Safari at
+  # 1024x768. Use 0 for apps with no chrome to hide. The SOREN_CHROME_CROP_Y
+  # env var still overrides this for debugging.
+  chrome_height_px: 100
+  enter_key_behavior: enter_only   # enter_only | escape_enter (e.g. Slack)
+  step_budget: 50                  # max agent steps per task
+  typing_delay_ms: 50
+  action_delay_ms: 500
+  cooldown_between_tasks_s: 30
+  required_apps: [Safari]
+
+  # Shortcuts the agent may use instead of clicking through menus. These are
+  # hints: the agent decides when to use them. `keys` is "cmd+k" or [cmd, k].
+  keyboard_shortcuts:
+    - keys: cmd+f
+      action: Find text on the page (e.g. a survey title)
+
+  # Tactical instructions included with every task on this service.
+  instructions:
+    - The "Log in" button is in the top-right of the navigation bar.
+
+  # Also give `notes` (above) to the agent. Off by default so results can be
+  # compared with and without them; set globally via settings.yaml
+  # `service_defaults`.
+  include_notes_in_prompt: false
