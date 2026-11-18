@@ -8,6 +8,7 @@ import pytest
 from soren.models.persona import Persona, Traits
 from soren.models.session import TaskResult
 from soren.models.task import Task
+from soren.services.config_loader import SorenSettings
 from soren.services.task_executor import TaskExecutor
 
 # Unit tests: fake the CUA SDK (see tests/conftest.py::fake_cua_sdk).
@@ -39,7 +40,7 @@ def _make_executor(
     step_budget: int = 50,
     playbook_service: MagicMock | None = None,
 ) -> TaskExecutor:
-    settings = MagicMock()
+    settings = SorenSettings()
     llm = MagicMock()
     vm = MagicMock()
     return TaskExecutor(

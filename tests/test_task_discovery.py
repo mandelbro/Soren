@@ -8,6 +8,7 @@ from soren.adapters.base import DISCOVERY_READY, get_adapter
 from soren.adapters.survey_platform import SurveyPlatformAdapter
 from soren.models.persona import Persona
 from soren.models.task_source import TaskSource
+from soren.services.config_loader import SorenSettings
 
 
 def test_discovery_adapter_protocol_enforces_prompt_methods():
@@ -65,10 +66,8 @@ async def test_phase3_parse_discovered_tasks():
     """Phase 3 output parsed into list of DiscoveredTask dicts."""
     from soren.services.task_discovery import TaskDiscovery
 
-    settings = MagicMock()
-    settings.vlm = MagicMock()
+    settings = SorenSettings()
     settings.vlm.model = "test"
-    settings.verification = MagicMock()
     settings.verification.model = "qwen3-vl:8b"
     llm = AsyncMock()
     vm = AsyncMock()
@@ -93,7 +92,7 @@ async def test_phase3_parse_handles_tasks_wrapper():
     """Phase 3 parses object with tasks key."""
     from soren.services.task_discovery import TaskDiscovery
 
-    settings = MagicMock()
+    settings = SorenSettings()
     discovery = TaskDiscovery(settings, AsyncMock(), AsyncMock(), AsyncMock())
     source = TaskSource(name="s", type="survey_platform", url="https://x.co")
     persona = Persona(name="P", id="p")
@@ -109,7 +108,7 @@ async def test_phase3_parse_handles_invalid_json():
     """Phase 3 returns empty list for invalid JSON."""
     from soren.services.task_discovery import TaskDiscovery
 
-    settings = MagicMock()
+    settings = SorenSettings()
     discovery = TaskDiscovery(settings, AsyncMock(), AsyncMock(), AsyncMock())
     source = TaskSource(name="s", type="survey_platform", url="https://x.co")
     persona = Persona(name="P", id="p")
@@ -123,7 +122,7 @@ async def test_discover_returns_empty_when_no_adapter():
     """Discovery returns empty list when no adapter for source type."""
     from soren.services.task_discovery import TaskDiscovery
 
-    settings = MagicMock()
+    settings = SorenSettings()
     llm = AsyncMock()
     vm = AsyncMock()
     backlog = AsyncMock()
@@ -142,8 +141,7 @@ async def test_discover_handles_navigation_failure_gracefully():
     """Discovery handles navigation failure gracefully (returns empty, no crash)."""
     from soren.services.task_discovery import TaskDiscovery
 
-    settings = MagicMock()
-    settings.vlm = MagicMock()
+    settings = SorenSettings()
     settings.vlm.model = "test"
     llm = AsyncMock()
     vm = AsyncMock()

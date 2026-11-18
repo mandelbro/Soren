@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from soren.models.persona import Persona, Traits
 from soren.models.task import Task
 from soren.models.task_source import TaskSource
+from soren.services.config_loader import SorenSettings
 from soren.services.task_executor import TaskExecutor
 
 
@@ -43,7 +44,7 @@ def make_persona_with_source(credential_ref: str = "") -> Persona:
 
 
 def make_executor(tmp_path: Path, step_budget: int = 50) -> TaskExecutor:
-    settings = MagicMock()
+    settings = SorenSettings()
     llm = MagicMock()
     vm = MagicMock()
     return TaskExecutor(
