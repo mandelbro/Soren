@@ -61,9 +61,9 @@ def _sample_site_playbook() -> SitePlaybook:
 class TestTrainList:
     def test_list_with_playbooks(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.list_site_playbooks.return_value = [_sample_site_playbook()]
@@ -76,9 +76,9 @@ class TestTrainList:
 
     def test_list_no_playbooks(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.list_site_playbooks.return_value = []
@@ -93,9 +93,9 @@ class TestTrainList:
 class TestTrainShow:
     def test_show_displays_playbook(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.load_site.return_value = _sample_site_playbook()
@@ -109,9 +109,9 @@ class TestTrainShow:
 
     def test_show_not_found(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.load_site.return_value = None
@@ -123,9 +123,9 @@ class TestTrainShow:
 
     def test_show_cascade_flag(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.load_site.return_value = _sample_site_playbook()
@@ -141,9 +141,9 @@ class TestTrainShow:
 class TestTrainDelete:
     def test_delete_calls_delete_site(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.delete_site.return_value = True
@@ -157,9 +157,9 @@ class TestTrainDelete:
 
     def test_delete_not_found(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.delete_site.return_value = False
@@ -174,9 +174,9 @@ class TestTrainDelete:
         """--flow option deletes a specific flow from the playbook."""
         site = _sample_site_playbook()
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc.load_site.return_value = site
@@ -190,9 +190,9 @@ class TestTrainDelete:
 
     def test_delete_cancelled(self, runner):
         with (
-            patch("soren.cli.train.load_settings", return_value=_mock_settings()),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.PlaybookService") as mock_svc_cls,
+            patch("soren.cli.train_playbooks.load_settings", return_value=_mock_settings()),
+            patch("soren.cli.train_playbooks.LLMService"),
+            patch("soren.cli.train_playbooks.PlaybookService") as mock_svc_cls,
         ):
             mock_svc = MagicMock()
             mock_svc_cls.return_value = mock_svc

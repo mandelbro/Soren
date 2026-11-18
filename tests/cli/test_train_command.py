@@ -5,16 +5,8 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-from click.testing import CliRunner
-
 from soren.cli import cli
 from soren.cli.train import _SILENCED_NOISY_LOGGERS, _TRAINING_LOGGERS, _configure_training_logging
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
 
 
 def _mock_settings():
@@ -151,19 +143,6 @@ class TestTrainRunCommand:
         assert flow_types == ["login", "discovery", "execution"]
 
 
-class TestRichTrainingCallbacks:
-    def test_callbacks_class_importable(self):
-        from soren.cli.train import RichTrainingCallbacks
-
-        cb = RichTrainingCallbacks()
-        assert hasattr(cb, "show_screenshot")
-        assert hasattr(cb, "get_instruction")
-        assert hasattr(cb, "confirm_step")
-        assert hasattr(cb, "get_expected_after")
-        assert hasattr(cb, "show_message")
-        assert hasattr(cb, "show_error")
-
-
 class TestConfigureTrainingLogging:
     """Without this configuration, click coordinates and VNC scale factor stay invisible."""
 
@@ -230,167 +209,26 @@ class TestConfigureTrainingLogging:
             mock_cfg.assert_called_once_with(debug=True)
 
 
-class TestUrlResolvedFromPersona:
-    """The CLI looks up the task source URL from persona task_sources when
-    --url is not explicitly provided, so the operator doesn't have to retype
-    it every training run. Persona files already carry the URL — this is
-    pure plumbing."""
+class TestTrainingLoggersCoverTrainingModules:
+    """Every training module that logs must be surfaced by `train run` (otherwise its INFO lines vanish)."""
 
-    @staticmethod
-    def _persona_with_source(source_name: str, url: str):
-        """Build a minimal Persona object with one task_source."""
-        from soren.models.persona import Persona
-        from soren.models.task_source import TaskSource
+    def test_all_training_module_loggers_configured(self) -> None:
+        import importlib
+        import logging as _logging
+        import pkgutil
 
-        return Persona(
-            name="Test Persona",
-            id="test",
-            description="test",
-            task_sources=[TaskSource(name=source_name, url=url, credential_ref="x")],
-        )
+        import soren.services
 
-    def test_persona_url_used_when_flag_absent(self, runner):
-        """When --url is not passed, the CLI finds the source by name in
-        the persona task_sources list and uses that URL."""
-        from soren.cli.train import _resolve_source_url
-
-        personas = [self._persona_with_source("acmepanel", "https://acmepanel.example/home")]
-        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
-        assert resolved == "https://acmepanel.example/home"
-
-    def test_explicit_url_flag_overrides_persona(self, runner):
-        """When --url IS passed, it takes precedence over the persona URL."""
-        from soren.cli.train import _resolve_source_url
-
-        personas = [self._persona_with_source("acmepanel", "https://acmepanel.example/home")]
-        resolved = _resolve_source_url(
-            source_name="acmepanel",
-            url_flag="https://override.example.com",
-            personas=personas,
-        )
-        assert resolved == "https://override.example.com"
-
-    def test_no_url_when_source_not_in_any_persona(self, runner):
-        """If the source name doesn't match any persona task_source, return
-        empty string — the training session will skip auto-navigation."""
-        from soren.cli.train import _resolve_source_url
-
-        personas = [self._persona_with_source("other-source", "https://other.example.com")]
-        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
-        assert resolved == ""
-
-    def test_first_matching_persona_wins(self, runner):
-        """When multiple personas list the same source, the first match with
-        a non-empty URL is used. Personas are scanned in load order."""
-        from soren.cli.train import _resolve_source_url
-
-        personas = [
-            self._persona_with_source("acmepanel", "https://first.example.com"),
-            self._persona_with_source("acmepanel", "https://second.example.com"),
+        training_modules = [
+            f"soren.services.{m.name}"
+            for m in pkgutil.iter_modules(soren.services.__path__)
+            if m.name.startswith("training_")
         ]
-        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
-        assert resolved == "https://first.example.com"
-
-    def test_empty_persona_url_skipped(self, runner):
-        """A persona with a matching source name but url='' is skipped;
-        if another persona has a non-empty URL for the same source, that's used."""
-        from soren.cli.train import _resolve_source_url
-
-        personas = [
-            self._persona_with_source("acmepanel", ""),  # matches name but no URL
-            self._persona_with_source("acmepanel", "https://has-url.example.com"),
+        logging_modules = [
+            name
+            for name in training_modules
+            if isinstance(getattr(importlib.import_module(name), "logger", None), _logging.Logger)
         ]
-        resolved = _resolve_source_url(source_name="acmepanel", url_flag=None, personas=personas)
-        assert resolved == "https://has-url.example.com"
-
-
-class TestTrainRunUrlFlag:
-    """--url flag threads into TrainingSession.source_url so _navigate can
-    auto-dispatch Cmd+L + type URL + Return via the keyboard path (ADR-0001).
-    """
-
-    @staticmethod
-    def _patched_session_cls():
-        """Return a MagicMock suitable for patching TrainingSession that
-        yields instances whose .run() returns None asynchronously (simulating
-        an aborted training session so the CLI's ``if result is None`` branch
-        short-circuits before touching downstream code)."""
-        mock_instance = MagicMock()
-        mock_instance.run = AsyncMock(return_value=None)
-        cls = MagicMock(return_value=mock_instance)
-        return cls
-
-    def test_url_flag_threaded_to_session(self, runner):
-        """Running `train run SOURCE --url https://example.com` must construct
-        TrainingSession with source_url set to that URL, even if a persona
-        has a different URL configured (flag wins over persona)."""
-        MockSession = self._patched_session_cls()
-        persona_with_different_url = TestUrlResolvedFromPersona._persona_with_source(
-            "acmepanel", "https://from-persona.example.com"
-        )
-        with (
-            patch("soren.cli.train._configure_training_logging"),
-            patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.VMManager"),
-            patch("soren.cli.train.PlaybookService"),
-            patch("soren.cli.train.load_all", return_value=[persona_with_different_url]),
-        ):
-            result = runner.invoke(
-                cli,
-                ["train", "run", "acmepanel", "--flow", "login", "--url", "https://acmepanel.example"],
-            )
-
-        assert result.exit_code == 0, result.output
-        assert MockSession.called, "TrainingSession should be instantiated"
-        ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "https://acmepanel.example", (
-            f"Expected source_url='https://acmepanel.example' (flag wins); got {ctor_kwargs.get('source_url')!r}"
-        )
-
-    def test_url_from_persona_when_flag_absent(self, runner):
-        """When --url is omitted, the CLI looks up the URL from the persona
-        task_sources list by source name."""
-        MockSession = self._patched_session_cls()
-        persona = TestUrlResolvedFromPersona._persona_with_source("acmepanel", "https://acmepanel.example/home")
-        with (
-            patch("soren.cli.train._configure_training_logging"),
-            patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.VMManager"),
-            patch("soren.cli.train.PlaybookService"),
-            patch("soren.cli.train.load_all", return_value=[persona]),
-        ):
-            result = runner.invoke(cli, ["train", "run", "acmepanel", "--flow", "login"])
-
-        assert result.exit_code == 0, result.output
-        assert MockSession.called, "TrainingSession should be instantiated"
-        ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "https://acmepanel.example/home", (
-            f"Expected source_url from persona; got {ctor_kwargs.get('source_url')!r}"
-        )
-
-    def test_source_url_empty_when_no_persona_match(self, runner):
-        """If neither --url nor any persona provides a URL, source_url is ''
-        and TrainingSession will skip auto-navigation."""
-        MockSession = self._patched_session_cls()
-        other_persona = TestUrlResolvedFromPersona._persona_with_source("other-source", "https://other.example.com")
-        with (
-            patch("soren.cli.train._configure_training_logging"),
-            patch("soren.cli.train.TrainingSession", MockSession),
-            patch("soren.cli.train.load_settings"),
-            patch("soren.cli.train.LLMService"),
-            patch("soren.cli.train.VMManager"),
-            patch("soren.cli.train.PlaybookService"),
-            patch("soren.cli.train.load_all", return_value=[other_persona]),
-        ):
-            result = runner.invoke(cli, ["train", "run", "acmepanel", "--flow", "login"])
-
-        assert result.exit_code == 0, result.output
-        assert MockSession.called, "TrainingSession should be instantiated"
-        ctor_kwargs = MockSession.call_args.kwargs
-        assert ctor_kwargs.get("source_url") == "", (
-            f"Expected source_url='' (no match); got {ctor_kwargs.get('source_url')!r}"
-        )
+        assert "soren.services.training_step_runner" in logging_modules  # sanity: the scan finds loggers
+        missing = sorted(set(logging_modules) - set(_TRAINING_LOGGERS))
+        assert not missing, f"add to soren.cli.train._TRAINING_LOGGERS: {missing}"
