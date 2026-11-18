@@ -18,7 +18,7 @@ Accepted. Current-state facts re-verified against the code on 2026-11-15 -- see 
 
 ## RFC Reference
 
-`docs/rfc.md` -- All proposals here comply with the four architectural invariants: vision-only execution, local-only inference, VM-isolated execution, GUI credential delivery.
+`docs/rfc.md` -- All proposals here comply with the four architectural invariants: vision-only execution, local-only inference, VM-isolated execution, GUI credential delivery. *(2026-11-17: the RFC amended local-only inference to local or Ollama cloud models; see RFC §Local or Ollama Cloud Models.)*
 
 ---
 
@@ -425,7 +425,7 @@ The model pipeline runs UI-TARS (7B, ~4GB VRAM via MLX), Qwen3-VL (8B, ~5GB via 
 > - `llm.fallback_model` is `gemma4:e4b`.
 > - `verification.model` is `qwen3-vl:235b-cloud`.
 >
-> The `-cloud` tags are Ollama cloud-hosted models, which is also relevant to the "local-only inference" invariant cited in the RFC Reference section above. This is flagged for follow-up, not resolved here. UI-TARS remains local via MLX. `meta_agent.MEMORY_ABORT_THRESHOLD_PCT` was raised to 92% "for cloud models". With `OLLAMA_MAX_LOADED_MODELS=1` and `keep_alive=0`, only one Ollama model is loaded at a time. The persistent agent's message history is CPU-memory only and does not compete with VRAM.
+> The `-cloud` tags are Ollama cloud-hosted models, which is also relevant to the "local-only inference" invariant cited in the RFC Reference section above. *(Resolved 2026-11-17: the RFC now allows Ollama cloud models for any role; credentials must never reach a cloud model.)* UI-TARS remains local via MLX. `meta_agent.MEMORY_ABORT_THRESHOLD_PCT` was raised to 92% "for cloud models". With `OLLAMA_MAX_LOADED_MODELS=1` and `keep_alive=0`, only one Ollama model is loaded at a time. The persistent agent's message history is CPU-memory only and does not compete with VRAM.
 
 VLM chrome calibration adds one extra Qwen3-VL inference per session (not per step). Negligible impact.
 

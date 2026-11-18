@@ -26,7 +26,7 @@ if [[ ! -r "$RFC_FILE" ]]; then
 [VISION-KEEPER] Warning: ${RFC_FILE} not found. Architectural guardrail disabled.
 Claude should still hold the following invariants (from prior RFC state):
   - Vision-based execution (UI-TARS screenshots), NOT DOM automation
-  - Local-only inference (no cloud LLM fallback in v1)
+  - Local or Ollama cloud inference only (no other hosted providers)
   - VM-isolated execution for bot-detection avoidance
 EOF
   exit 0
@@ -45,8 +45,9 @@ Goals that must be preserved:
   * Goal 4: VM-isolated execution for bot-detection avoidance
   * Goal 5: Vision-based task execution via UI-TARS (screenshots + mouse/keyboard,
     simulating a real human user)
-  * Goal 6: Local-only inference — reasoning, action, and verification models
-    all run on-device. NO cloud LLM fallback in v1.
+  * Goal 6: Local or Ollama cloud inference — each model role runs locally
+    (MLX/Ollama) or as an Ollama `-cloud` model, chosen per role in settings.
+    Credentials never go to a cloud model's prompt.
   * Goal 8: Encrypted credentials delivered via GUI input simulation;
     never via API traffic or environment variables.
 
@@ -55,11 +56,12 @@ Architectural alternatives EXPLICITLY REJECTED in the RFC:
     rejected because "the entire value proposition of Soren depends on
     undetectable automation" (§Alternatives Considered #1).
   * Host-side browser execution: breaks VM isolation and bot-detection guarantees.
-  * Cloud LLM fallback: violates local-only requirement and privacy model.
+  * Hosted LLM providers other than Ollama cloud (Anthropic, OpenAI, etc.).
 
 Before proposing ANY change that:
   (a) introduces a new execution modality (DOM, accessibility API, extension-based),
-  (b) moves inference off-device (cloud APIs, hosted endpoints), OR
+  (b) moves inference to a hosted provider other than Ollama cloud, or sends
+      credentials to a cloud model, OR
   (c) punctures the VM isolation boundary (host-side execution, network tunneling
       out of the VM for task execution purposes),
 you MUST invoke the vision-keeper subagent (see .claude/agents/vision-keeper.md)

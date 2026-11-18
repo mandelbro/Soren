@@ -4,6 +4,8 @@
 
 Approved — discovery corrections applied (February 24, 2026)
 
+**Amended November 17, 2026:** Goal 6 loosened from local-only inference to local *or Ollama cloud* models. See §Local or Ollama Cloud Models.
+
 ## Authors
 
 Generated from PRD v3.1 (February 23, 2026)
@@ -22,7 +24,7 @@ This is a **greenfield project**. The only existing artifacts are this PRD and a
 
 ### Scope
 
-This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system running entirely on Apple Silicon hardware with local models. Multi-VM concurrency, cloud LLM fallback, and real-time interfaces are explicitly deferred to future phases.
+This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system running on Apple Silicon hardware, with models served locally or through Ollama cloud. Multi-VM concurrency, other hosted LLM providers, and real-time interfaces are explicitly deferred to future phases.
 
 **Application surface.** Soren targets *any* application running inside the macOS VM that a human could operate with a mouse, keyboard, and eyes — browsers, desktop apps, and cross-application workflows that span multiple apps within a single task. Examples of cross-application flows that must be first-class:
 
@@ -31,7 +33,7 @@ This RFC covers the v1 implementation: a single-VM, single-task-per-cycle system
 - A native survey tool that opens a supporting browser tab for documentation or media uploads
 - Any combination of apps that simulate a realistic human workflow
 
-The vision-based, local-only, VM-isolated constraints apply uniformly across this expanded surface. Targeting a native app does NOT unlock native toolkit APIs, accessibility-tree queries, or any other modality that would bypass the "operate like a human using their eyes, mouse, and keyboard" thesis. UI-TARS (or its successor local VLM) remains the grounding model; CUA's mouse/keyboard dispatch remains the action transport.
+The vision-based, VM-isolated constraints apply uniformly across this expanded surface. Targeting a native app does NOT unlock native toolkit APIs, accessibility-tree queries, or any other modality that would bypass the "operate like a human using their eyes, mouse, and keyboard" thesis. UI-TARS (or its successor VLM) remains the grounding model; CUA's mouse/keyboard dispatch remains the action transport.
 
 ---
 
@@ -44,7 +46,7 @@ The vision-based, local-only, VM-isolated constraints apply uniformly across thi
 3. **Persona-driven behavior**: YAML-defined agent identities shape LLM responses and browser interaction patterns.
 4. **VM-isolated execution**: Each task runs inside a Lume macOS VM, providing OS-level isolation and bot-detection avoidance.
 5. **Vision-based task execution**: A CUA ComputerAgent driven by UI-TARS 1.5 7B (or equivalent local VLM) takes screenshots, reasons about UI state, and executes mouse/keyboard actions. This applies uniformly to browsers AND native macOS applications inside the VM — vision-based grounding is the mandate regardless of app type.
-6. **Local-only inference**: Reasoning (Gemma3:12B), action (UI-TARS 1.5 7B), and verification (Qwen3-VL 8B) all run locally.
+6. **Local or Ollama cloud inference**: Reasoning, action, and verification models run either locally (MLX or a local Ollama) or as Ollama cloud models (`-cloud` tags) served through the same Ollama API. Each role chooses independently in `config/settings.yaml`. Credentials never go to a cloud model (see §Local or Ollama Cloud Models).
 7. **Self-improving playbooks**: Successful task executions write back step-by-step instructions to per-service markdown playbooks, reducing future re-discovery.
 8. **Encrypted credential storage**: Service credentials encrypted at rest, delivered to the VM via GUI input simulation. Credentials do not appear in automation logs, API calls, or host-side traffic.
 9. **Cross-application workflow orchestration**: A single task may legitimately span multiple apps inside the VM (browser → email client → back to browser; native app → web OAuth → back to native app). The executor must carry task state across app transitions without losing context, and the verification/retry loop must reason about the currently-foregrounded app. This generalizes the "one task, one browser" assumption into "one task, one VM, any combination of apps a human would use to complete it."
@@ -52,7 +54,7 @@ The vision-based, local-only, VM-isolated constraints apply uniformly across thi
 ### Non-Goals
 
 - Web UI or dashboard (CLI and log files only)
-- Cloud LLM fallback (local models only in v1)
+- Hosted LLM providers other than Ollama cloud (Anthropic, OpenAI, Together, Replicate, Hugging Face Inference Endpoints, etc.)
 - Concurrent multi-VM execution (one VM at a time)
 - Linux VM support (macOS VMs via Lume only)
 - DOM-based, accessibility-API-based, or toolkit-API-based automation of *any* app (browser or native). Automation of an app must go through the same vision-based, mouse/keyboard-driven pathway whether the app is Safari or a native macOS application. (See §Alternatives Considered #1.)
@@ -501,11 +503,20 @@ Running three models consumes ~19 GB of unified memory. The alternative — a si
 
 **Trade-off**: Higher memory footprint and model management complexity. Mitigated by Ollama's model hot-swapping and MLX's efficient memory use on Apple Silicon.
 
-### Local-Only Models (No Cloud Fallback)
+### Local or Ollama Cloud Models
 
-Privacy is a core requirement. Credentials, persona data, and task content never leave the user's machine.
+*(Amended November 17, 2026; this section was "Local-Only Models (No Cloud Fallback)".)*
 
-**Trade-off**: Lower capability ceiling. Local 7B-12B models cannot match Claude Sonnet or GPT-4o on complex reasoning tasks. Some tasks may fail that a cloud model could handle. This is an acceptable trade-off for v1. Cloud LLM fallback is a post-v1 enhancement (not part of the current 7-phase roadmap) and would require explicit opt-in due to privacy implications.
+Each model role (reasoning, action, verification) may use a local model (MLX, or a local Ollama) or an Ollama cloud model (`-cloud` tag). Both go through the same Ollama API, so switching is a config change and needs no new client or dependency. Larger cloud models raise the capability ceiling and remove their memory pressure from the host (`MemoryGuard` skips pressure checks for `-cloud` models).
+
+Ollama cloud is the only hosted option. Other hosted LLM providers remain out of scope.
+
+**Privacy rules that still hold:**
+
+- **Credentials never go to a cloud model.** Decrypted credentials may appear only in prompts to locally running models. Anything built from execution data and sent to a cloud model (step logs, playbook write-back, verification) must redact typed credential values first.
+- **The operator chooses where data goes.** Whether a role runs locally or in the cloud is set explicitly per role in `config/settings.yaml`. There is no automatic fallback from a local model to a cloud one.
+
+**Trade-off**: With a cloud model, its prompts and screenshots (task content, persona-shaped text, page contents) leave the machine for Ollama's service. Operators who need everything on-device configure local models for every role; this costs capability on complex reasoning and adds memory pressure on a 32 GB host.
 
 ### Window-Management Reset with Periodic VM Recreation
 

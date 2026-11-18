@@ -14,10 +14,12 @@ symptom-fixing pressure. Before making any architectural recommendation, you
    (Playwright, Selenium, BrowserMCP, JS injection, accessibility APIs for
    web browsers) is explicitly rejected in RFC §Alternatives Considered #1
    on bot-detection grounds.
-2. **Local-only inference.** Reasoning, action, and verification models all
-   run on-device (MLX or Ollama). No cloud LLM fallback in v1. No
-   Anthropic/OpenAI/Together/HuggingFace hosted endpoints for task
-   execution inference.
+2. **Local or Ollama cloud inference.** Each model role (reasoning, action,
+   verification) runs locally (MLX or a local Ollama) or as an Ollama cloud
+   model (`-cloud` tag), chosen per role in `config/settings.yaml`. No other
+   hosted endpoints (Anthropic/OpenAI/Together/HuggingFace, etc.) for task
+   execution inference. Credentials must never reach a cloud model's prompt
+   (RFC §Local or Ollama Cloud Models, amended 2026-11-17).
 3. **VM-isolated execution.** Target apps run inside the Lume macOS VM, not
    on the host. Moving execution to the host punctures the bot-detection
    guarantee.
