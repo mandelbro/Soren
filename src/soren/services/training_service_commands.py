@@ -201,10 +201,14 @@ class TrainingServiceCommands:
     def _add_auto_proposals(self, original: ResolvedService, existing: Service | None, source_url: str) -> None:
         if self.pending.url is None and source_url and not (existing and existing.url):
             self.pending.set_url(source_url, origin="auto: training navigation URL")
-        if self.pending.chrome_height_px is None and original.source_of("chrome_height_px").startswith("env:"):
-            file_value = existing.config.chrome_height_px if existing else None
-            if file_value != original.config.chrome_height_px:
-                self.pending.set_chrome_height(original.config.chrome_height_px, origin="auto: SOREN_CHROME_CROP_Y")
+        # Like the URL: only fill a gap. A configured crop is never replaced by the env debug override.
+        file_value = existing.config.chrome_height_px if existing else None
+        if (
+            self.pending.chrome_height_px is None
+            and file_value is None
+            and original.source_of("chrome_height_px").startswith("env:")
+        ):
+            self.pending.set_chrome_height(original.config.chrome_height_px, origin="auto: SOREN_CHROME_CROP_Y")
 
     def _override_warnings(self, original: ResolvedService, new_service: Service) -> list[str]:
         warnings: list[str] = []

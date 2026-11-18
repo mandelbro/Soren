@@ -165,14 +165,31 @@ class TestPrepareSave:
     def test_auto_url_not_proposed_when_file_has_url(self, svc, tmp_path: Path) -> None:
         assert self._plan(TrainingServiceCommands(svc), tmp_path, source_url="https://other.example") is None
 
-    def test_auto_crop_from_env_proposed(self, tmp_path: Path) -> None:
-        svc = make_resolved_service(
-            tmp_path, "gcal", config={"chrome_height_px": 80}, environ={"SOREN_CHROME_CROP_Y": "100"}
-        )
+    def test_auto_crop_from_env_proposed_when_file_has_no_crop(self, tmp_path: Path) -> None:
+        """The env var was the only crop that worked during training: offer to make it permanent."""
+        svc = make_resolved_service(tmp_path, "gcal", environ={"SOREN_CHROME_CROP_Y": "100"})
         plan = self._plan(TrainingServiceCommands(svc), tmp_path)
         assert plan is not None and plan.service.config.chrome_height_px == 100
         assert plan.changes == ["config.chrome_height_px: 100 (auto: SOREN_CHROME_CROP_Y)"]
         assert plan.warnings == []  # env value == saved value, nothing shadowed
+
+    def test_env_crop_never_replaces_the_file_value(self, tmp_path: Path) -> None:
+        """A stale SOREN_CHROME_CROP_Y must stay a debug override, not be saved over a configured crop."""
+        svc = make_resolved_service(
+            tmp_path, "gcal", config={"chrome_height_px": 80}, environ={"SOREN_CHROME_CROP_Y": "100"}
+        )
+        commands = TrainingServiceCommands(svc)
+        commands.handle("/instruction Use the sidebar")
+        plan = self._plan(commands, tmp_path)
+        assert plan is not None
+        assert plan.service.config.chrome_height_px == 80
+        assert plan.changes == ["config.instructions += Use the sidebar"]
+
+    def test_env_crop_alone_does_not_trigger_a_save_when_file_has_a_crop(self, tmp_path: Path) -> None:
+        svc = make_resolved_service(
+            tmp_path, "gcal", config={"chrome_height_px": 80}, environ={"SOREN_CHROME_CROP_Y": "100"}
+        )
+        assert self._plan(TrainingServiceCommands(svc), tmp_path) is None
 
     def test_explicit_crop_beats_auto_crop(self, tmp_path: Path) -> None:
         svc = make_resolved_service(tmp_path, "gcal", environ={"SOREN_CHROME_CROP_Y": "100"})
