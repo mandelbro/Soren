@@ -131,6 +131,24 @@ class TestAtomicWrite:
         assert len(set(temp_paths)) == 2
         assert all(Path(p).parent == registry.services_dir for p in temp_paths)  # same filesystem for os.replace
 
+    def test_rewrite_keeps_the_existing_file_mode(self, registry: ServiceRegistry) -> None:
+        """The temp file is created 0600; the replaced file must keep the operator's permissions."""
+        writer = ServiceWriter(registry)
+        path = writer.write(_service()).path
+        path.chmod(0o640)
+
+        writer.write(_service(notes="again"))
+
+        assert path.stat().st_mode & 0o777 == 0o640
+
+    def test_new_file_gets_default_permissions(self, registry: ServiceRegistry) -> None:
+        old_umask = os.umask(0o022)
+        try:
+            path = ServiceWriter(registry).write(_service()).path
+        finally:
+            os.umask(old_umask)
+        assert path.stat().st_mode & 0o777 == 0o644
+
     def test_content_is_fsynced_before_replace(self, registry: ServiceRegistry) -> None:
         calls: list[str] = []
         with (

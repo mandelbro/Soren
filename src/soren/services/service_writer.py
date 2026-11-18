@@ -96,6 +96,13 @@ def _has_inline_comment(line: str) -> bool:
     return False
 
 
+def _default_file_mode() -> int:
+    """Mode a normally created file would get (0o666 minus the umask)."""
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
 class ServiceWriter:
     """Validated, atomic writes of service definitions with bounded backups."""
 
@@ -148,6 +155,7 @@ class ServiceWriter:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         created = not path.exists()
+        mode = _default_file_mode() if created else path.stat().st_mode & 0o777
         backup = None if created else self._backup(path)
         # Unique name in the same directory: concurrent writers can't clobber each
         # other, and os.replace stays an atomic same-filesystem rename.
@@ -158,6 +166,7 @@ class ServiceWriter:
                 handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
+            os.chmod(tmp, mode)  # mkstemp creates 0600; keep the file's (or the default) permissions
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)

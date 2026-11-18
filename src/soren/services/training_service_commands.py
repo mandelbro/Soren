@@ -158,6 +158,7 @@ class TrainingServiceCommands:
         original = self._original
         if original is None:
             return None
+        # Fingerprint before reading: an edit in between then fails the write (safe), never gets overwritten.
         fingerprint = writer.fingerprint(registry.path_for(original.name))
         existing = registry.get(original.name)
         self._add_auto_proposals(original, existing, source_url)
