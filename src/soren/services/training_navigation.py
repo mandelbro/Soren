@@ -1,8 +1,9 @@
-"""Training auto-navigation: Cmd+L, type the URL, Return (ADR-0001).
+"""Keyboard URL navigation: Cmd+L, type the URL, Return (ADR-0001).
 
 A deterministic keyboard sequence sent through CUA's real-OS-input
 transport, not through UI-TARS, so it works even when the chrome crop hides
-the URL bar.
+the URL bar. Training always uses it; discovery and execution use it when the
+active service crops the chrome (``navigate_if_url_bar_hidden``).
 """
 
 from __future__ import annotations
@@ -69,3 +70,16 @@ async def auto_navigate_to_url(interface: Any, url: str) -> None:
     # even the DNS lookup yet.
     logger.info("Auto-navigate: waiting %.1fs for page to load", NAV_PAGE_LOAD_DELAY)
     await asyncio.sleep(NAV_PAGE_LOAD_DELAY)
+
+
+async def navigate_if_url_bar_hidden(chrome_height_px: int, url: str, interface: Any, label: str) -> None:
+    """Open ``url`` with ``auto_navigate_to_url`` when a chrome crop hides the URL bar from UI-TARS.
+
+    No-op without a crop or a URL. A failure is logged, not raised: the agent still tries on its own.
+    """
+    if chrome_height_px <= 0 or not url:
+        return
+    try:
+        await auto_navigate_to_url(interface, url)
+    except Exception as exc:
+        logger.warning("Could not open %s before %s: %s", url, label, exc)

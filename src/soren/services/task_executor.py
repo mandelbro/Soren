@@ -41,6 +41,7 @@ from soren.services.service_registry import ServiceRegistry
 from soren.services.service_resolution import ResolvedService, resolve_for_task
 from soren.services.stuck_detector import StuckDetector
 from soren.services.task_tabs import TabTransitionHandler, host_domain_of
+from soren.services.training_navigation import navigate_if_url_bar_hidden
 
 if TYPE_CHECKING:
     from soren.services.config_loader import SorenSettings
@@ -105,6 +106,17 @@ class TaskExecutor:
         logger.error("Service configuration error; task not started: %s", exc)
         return TaskResult(success=False, steps_taken=0, error=f"{CONFIG_ERROR_PREFIX} {exc}")
 
+    async def _prepare_screen(self, task: Task, service: ResolvedService | None, computer: Any) -> None:
+        """Open the service's required apps, then the task page if a crop hides the URL bar."""
+        await self._open_required_apps(service)
+        if service is not None:
+            await navigate_if_url_bar_hidden(
+                service.config.chrome_height_px,
+                task.source_url or service.url,
+                computer.interface,
+                f"task {task.id}",
+            )
+
     async def _open_required_apps(self, service: ResolvedService | None) -> None:
         if not service or not service.config.required_apps:
             return
@@ -134,7 +146,7 @@ class TaskExecutor:
         except ServiceConfigError as exc:
             return self._config_error_result(exc)
         with use_service(service):
-            await self._open_required_apps(service)
+            await self._prepare_screen(task, service, computer)
             result, _ = await self._run(task, persona, computer, memories, service, learning=False)
             return result
 
@@ -155,7 +167,7 @@ class TaskExecutor:
         except ServiceConfigError as exc:
             return self._config_error_result(exc), False
         with use_service(service):
-            await self._open_required_apps(service)
+            await self._prepare_screen(task, service, computer)
             return await self._run(task, persona, computer, memories, service, learning=True)
 
     async def _run(

@@ -14,6 +14,7 @@ from soren.services.agent_output import contains_text, screenshot_from_item
 from soren.services.service_context import use_service
 from soren.services.service_registry import ServiceRegistry
 from soren.services.service_resolution import ResolvedService, resolve_service
+from soren.services.training_navigation import navigate_if_url_bar_hidden
 
 if TYPE_CHECKING:
     from soren.models.persona import Persona
@@ -83,7 +84,9 @@ class TaskDiscovery:
 
         try:
             with use_service(service):
-                await self._navigate_if_url_bar_hidden(service, source, computer)
+                await navigate_if_url_bar_hidden(
+                    service.config.chrome_height_px, source.url, computer.interface, f"discovery for {source.name!r}"
+                )
                 screenshots = await self._phase1_navigate(adapter, persona, source, computer)
             if not screenshots:
                 return []
@@ -98,22 +101,6 @@ class TaskDiscovery:
             # One broken source must not stop discovery for the others, but never fail silently.
             logger.exception("Discovery failed for source %r (persona %r)", source.name, persona.id)
             return []
-
-    @staticmethod
-    async def _navigate_if_url_bar_hidden(service: ResolvedService, source: TaskSource, computer: Any) -> None:
-        """With the chrome cropped, UI-TARS can't see the URL bar: open the source URL first.
-
-        Uses training's Cmd+L sequence (ADR-0001), real keystrokes through the CUA
-        transport. A failure is logged and the agent still tries on its own.
-        """
-        if service.config.chrome_height_px <= 0 or not source.url:
-            return
-        from soren.services.training_navigation import auto_navigate_to_url
-
-        try:
-            await auto_navigate_to_url(computer.interface, source.url)
-        except Exception as exc:
-            logger.warning("Could not open %s before discovery for %r: %s", source.url, source.name, exc)
 
     @staticmethod
     def _effective_source(source: TaskSource, service: ResolvedService) -> TaskSource:

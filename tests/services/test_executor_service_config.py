@@ -233,3 +233,46 @@ class TestMockSettingsCompatibility:
         result, agent_cls, seen = await _run(_executor(tmp_path, settings=MagicMock(), step_budget=50), "execute")
         agent_cls.assert_called_once()
         assert seen[0] is not None
+
+
+@pytest.mark.parametrize("method", EXECUTE_METHODS)
+class TestNavigationWithCroppedChrome:
+    """The browser reset leaves a blank window; with the chrome cropped UI-TARS can't reach the URL bar.
+
+    So the executor opens the task's page first with training's Cmd+L sequence (ADR-0001).
+    """
+
+    async def _execute(self, tmp_path: Path, method: str, *, crop: int, task_url: str = "") -> list[str]:
+        write_service(
+            tmp_path / "services", "gcal", url="https://calendar.example/home", config={"chrome_height_px": crop}
+        )
+        computer = MagicMock()
+        events: list[str] = []
+        computer.interface.hotkey = AsyncMock(side_effect=lambda *k: events.append("hotkey:" + "+".join(k)))
+        computer.interface.type_text = AsyncMock(side_effect=lambda t: events.append(f"type:{t}"))
+        computer.interface.press_key = AsyncMock(side_effect=lambda k: events.append(f"key:{k}"))
+
+        async def run(*_a, **_k):
+            events.append("agent")
+            yield {"output": [{"role": "assistant", "content": "Task complete."}]}
+
+        task = _task().model_copy(update={"source_url": task_url})
+        with (
+            patch("cua_agent.ComputerAgent") as agent_cls,
+            patch("soren.services.training_navigation.asyncio.sleep", AsyncMock()),
+        ):
+            agent_cls.return_value.run = run
+            await getattr(_executor(tmp_path), method)(task, _persona(), computer)
+        return events
+
+    async def test_opens_the_task_url_before_the_agent_runs(self, tmp_path: Path, method: str) -> None:
+        events = await self._execute(tmp_path, method, crop=100, task_url="https://calendar.example/survey/42")
+        assert events[:4] == ["hotkey:cmd+l", "type:https://calendar.example/survey/42", "key:return", "agent"]
+
+    async def test_falls_back_to_the_service_url(self, tmp_path: Path, method: str) -> None:
+        events = await self._execute(tmp_path, method, crop=100)
+        assert events[1] == "type:https://calendar.example"  # persona url wins over the service file's
+
+    async def test_no_navigation_when_nothing_is_cropped(self, tmp_path: Path, method: str) -> None:
+        events = await self._execute(tmp_path, method, crop=0, task_url="https://calendar.example/survey/42")
+        assert events == ["agent"]
