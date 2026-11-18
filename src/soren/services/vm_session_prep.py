@@ -109,6 +109,12 @@ end tell
 
         Used after task selection for a service's ``required_apps``: unlike
         ``prepare_session_environment`` it does not create a Space or quit apps.
+
+        This is environment setup, allowed by RFC §Alternatives Considered #1
+        ("VM state management") only while it stays setup: call it before the
+        agent loop, never mid-task; pass only an app name (no URL, document or
+        ``--args``: navigation goes through Cmd+L keystrokes, ADR-0001); and do
+        nothing beyond launching the app.
         """
         if self._shell.computer is None:
             raise RuntimeError("Computer not connected. Call connect_computer() first.")
